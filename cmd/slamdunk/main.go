@@ -5,7 +5,6 @@ import (
     "log"
     "bufio"
     "errors"
-    "strconv"
     "syscall"
     "os/signal"
 
@@ -106,9 +105,14 @@ func main() {
                     },
                     &cli.BoolFlag {
                         Name: "matches",
-                        Usage: "Display only URLs that resolve to a valid bucket (default is set).",
+                        Usage: "Display only URLs that resolve to a bucket (default is true).",
                         Aliases: []string{"m"},
                         Value: true,
+                    },
+                    &cli.StringFlag {
+                        Name: "output",
+                        Usage: "Path where resultant buckets only are stored, seperated by newline.",
+                        Aliases: []string{"o"},
                     },
                 },
                 Action: func(c *cli.Context) error {
@@ -119,8 +123,6 @@ func main() {
                     if len(urls) == 0 && file == "" {
                         return errors.New("Must specify both or either `--url` or `--file`.")
                     }
-
-                    matches := c.Bool("matches")
 
                     // if file specified, append to URLs
                     if file != "" {
@@ -133,7 +135,9 @@ func main() {
 
                     // stores contents for making an ASCII table
                     outputMap := [][]string{}
-                    header := []string{"URL", "S3 Bucket", "Bucket Takeover?"}
+                    header := []string{"URL", "Bucket Name", "Region", "Bucket Takeover?"}
+
+                    // stores result to write-append to output file
 
                     // handle keyboard interrupts to output table with content so far
                     channel := make(chan os.Signal)
@@ -141,7 +145,12 @@ func main() {
                     go func() {
                         <-channel
                         log.Println("Ctrl+C pressed, interrupting execution...")
+
+                        // on exception, first display what's already stored in output
                         OutputTable(outputMap, header)
+
+                        // then if outputList is populated, write to path specified on disk
+
                         os.Exit(0)
                     }()
 
@@ -154,27 +163,11 @@ func main() {
                             continue
                         }
 
-                        // identify string to output based on result parsed
-                        var output string
-                        if resolved.Bucket == nil {
-
-                            // is matches is switched, skip over
-                            if matches {
-                                continue
-                            }
-                            output = "Not Found"
-
-                        // empty string means S3 is present, but name cannot be found
-                        } else if *resolved.Bucket == "" {
-                            output = "Some S3 Bucket"
-
-                        // otherwise bucket is found
-                        } else {
-                            output = *resolved.Bucket
+                        // skip URLs that don't resolve to buckets
+                        if c.Bool("matches") && !resolved.HasBucket() {
+                            continue
                         }
-
-                        row := []string{url, output, strconv.FormatBool(resolved.Takeover)}
-                        outputMap = append(outputMap, row)
+                        outputMap = append(outputMap, resolved.GenTableRow())
                     }
                     OutputTable(outputMap, header)
                     return nil
@@ -182,15 +175,36 @@ func main() {
             },
             {
                 Name: "playbook",
-                Usage: "List all supported actions in the playbook, and provide additional information about their use",
+                Usage: "List supported actions in the playbook, and provide additional information about their use",
                 Flags: []cli.Flag {
                     &cli.StringFlag {
                         Name: "action",
                         Usage: "If set, prints information only about specific action in playbook.",
-                        Aliases: []string{"f"},
+                        Aliases: []string{"a"},
                     },
                 },
                 Action: func(c *cli.Context) error {
+                    playbook := slamdunk.NewPlayBook()
+
+                    // stores contents for making an ASCII table
+                    outputMap := [][]string{}
+                    header := []string{"Action", "Description", "Equivalent Command"}
+
+                    // search for action if specified
+                    actionName := c.String("action")
+                    if actionName != "" {
+                        if action, ok := playbook[actionName]; ok {
+                            outputMap = append(outputMap, action.TableEntry(actionName))
+                        } else {
+                            return errors.New("Cannot find specified action in playbook.")
+                        }
+                    } else {
+                        for name, action := range playbook {
+                            outputMap = append(outputMap, action.TableEntry(name))
+                        }
+                    }
+
+                    OutputTable(outputMap, header)
                     return nil
                 },
             },
