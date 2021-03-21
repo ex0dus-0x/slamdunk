@@ -5,10 +5,10 @@ import (
     "net"
     "errors"
     "strings"
+    "regexp"
     "net/http"
 
     "github.com/beevik/etree"
-    "github.com/aws/aws-sdk-go/service/s3"
 )
 
 // Result status for a given target URL. If bucket is nil, means that our current methods 
@@ -53,8 +53,12 @@ func GetCNAME(url string) (string, error) {
 
 // Given a single URL, run a set of actions against it in order to resolve a bucket name, while also
 // attempting to detect if subdomain takeover is possible.
+//
+// 1. Check DNS records for a S3 URL CNAME
+// 2. Check HTTP GET response for S3 metadata
+// 3. Parse data as XML and check tags for any S3 metadata
+// 4. Check if URL itself is a bucket name
 func Resolver(url string) (*ResolverStatus, error) {
-
     // sanity-check: must not already be an S3 URL
     if strings.Contains(url, "amazonaws.com") {
         return nil, errors.New("Already a S3 URL, no need to resolve further.")
@@ -65,22 +69,6 @@ func Resolver(url string) (*ResolverStatus, error) {
         Bucket: nil,
         Region: nil,
         Takeover: false,
-    }
-
-    // first: check if URL points to a S3 URL in any CNAME records. A bucket may use a CDN that
-    // masks the original S3 URL, so this may not return anything even if it is a bucket
-    potentialCname, err := GetCNAME(url);
-    if err != nil || potentialCname == "" {
-        //return nil, err
-    }
-
-    // parse CNAME for AWS endpoint
-    // endpoint options:
-    //  s3-<REGION>.amazonaws.com/<BUCKET_NAME>/<OBJECTS>
-    //  <BUCKET_NAME>.s3.<REGION>.amazonaws.com/<OBJECTS>
-    if strings.Contains(potentialCname, ".amazonaws.com") {
-        // TODO: check regexes
-        return &status, nil
     }
 
     // prepend http protocol to url if not present, since net/http requires so
@@ -98,6 +86,35 @@ func Resolver(url string) (*ResolverStatus, error) {
     if err != nil {
         return nil, err
     }
+
+    // first: check if URL points to a S3 URL in any CNAME records. A bucket may use a CDN that
+    // masks the original S3 URL, so this may not return anything even if it is a bucket
+    potentialCname, _ := GetCNAME(url);
+    if strings.Contains(potentialCname, ".amazonaws.com") {
+
+        // s3-<REGION>.amazonaws.com/<BUCKET_NAME>/<OBJECTS>
+        expr1 := regexp.MustCompile(`s3-(?P<region>[^.]+).amazonaws.com/(?P<bucket>[^/]+)`)
+        expr1Matches := expr1.FindStringSubmatch(potentialCname)
+        if len(expr1Matches) != 0 {
+            status.Region = &expr1Matches[1]
+            status.Bucket = &expr1Matches[2]
+        }
+
+        // <BUCKET_NAME>.s3.<REGION>.amazonaws.com/<OBJECTS>
+        expr2 := regexp.MustCompile(`(?P<bucket>[^/]+).s3.(?P<region>[^.]+).amazonaws.com`)
+        expr2Matches := expr2.FindStringSubmatch(potentialCname)
+        if len(expr2Matches) != 0 {
+            status.Region = &expr2Matches[2]
+            status.Bucket = &expr2Matches[1]
+        }
+
+        // do a very quick check in the body of data for NoSuchBucket and dip
+        if strings.Contains(string(bytedata), "NoSuchBucket") {
+            status.Takeover = true
+        }
+        return &status, nil
+    }
+
 
     // next: check for `Server` header to be AmazonS3, if not, return
     // TODO: more research to see if `Server` header can be manipulated for S3
@@ -124,7 +141,6 @@ func Resolver(url string) (*ResolverStatus, error) {
 
         // get string for Code tag used to indicate error
         code := errTag.SelectElement("Code").Text()
-
         switch code {
             // NoSuchBucket: bucket deleted, but takeover is possible!
             case "NoSuchBucket":
@@ -151,20 +167,12 @@ func Resolver(url string) (*ResolverStatus, error) {
         return &status, nil
     }
 
+    // TODO: other XML data that may be returned
+
 otherchecks:
 
-    // if all else fails, check to see if the URL itself is a bucket name
-    svc := s3.New(session.New())
-    input := &s3.HeadBucketInput{
-        Bucket: aws.String(url),
-    }
-
-    // check to see if URL bucket exists
-    _, err := svc.HeadBucket(input)
-    if err != nil {
-        return &status, nil
-    } else {
-        // TODO: parse region?
+    // check to see if URL itself is a bucket name
+    if CheckBucketExists(url) {
         status.Bucket = &url
     }
     return &status, nil
