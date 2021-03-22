@@ -25,14 +25,16 @@ func GetBucketRegions() []string {
         "ap-southeast-2",
         "ap-northeast-1",
         "ca-central-1",
-        "cn-north-1",
-        "cn-northwest-1",
         "eu-central-1",
         "eu-west-1",
         "eu-west-2",
         "eu-west-3",
         "eu-north-1",
         "sa-east-1",
+
+        // china regions report "Forbidden" even if bucket doesn't exist
+        "cn-north-1",
+        "cn-northwest-1",
     }
 }
 
@@ -40,7 +42,7 @@ func GetBucketRegions() []string {
 // Helper used to check if the current user is authenticated, as some permissions are configured
 // to work only if its by an authenticated user. We won't parse the credentials if it exists, as the
 // S3 SDK should be doing that for us.
-func AWSIsAuthenticated() bool {
+func IsAuthenticated() bool {
     // resolve standard path to where credentials should be
     user, _ := user.Current()
     dir := user.HomeDir
@@ -51,6 +53,13 @@ func AWSIsAuthenticated() bool {
         return false
     }
     return true
+}
+
+// Attempt to parse out the current user's region, if set in the config or by envvar. Otherwise return
+// the default, which is `us-east-1`
+// TODO
+func GetUserRegion() string {
+    return "us-east-1"
 }
 
 
@@ -72,15 +81,23 @@ func HeadBucketWrap(target string, region string) bool {
         // if AccessDenied or InvalidKey, the bucket exists but may lack permissiosn
         // to access it, requiring further investigation (TODO: ErrCodeNoSuchUpload)
         if aerr, ok := err.(awserr.Error); ok {
-            switch aerr.Code() {
-            case "Forbidden", s3.ErrCodeNoSuchKey:
+            errMsg := aerr.Code()
+
+            // AccessDenied means bucket exists, unless in China region, which reports that for all
+            if (errMsg == "Forbidden") && (region != "cn-north-1") && (region != "cn-northwest-1") {
                 return true
-            case "MissingEndpoint":
+
+            // InvalidKey means bucket exists but points to a deleted object
+            } else if (errMsg == s3.ErrCodeNoSuchKey) {
+                return true
+
+            // missing* may be a s3 specific error, possible latency issues
+            } else if (errMsg == "MissingEndpoint") || (errMsg == "MissingRegion") {
                 fmt.Println("May be encountering a rate limit/timeout.")
-                fallthrough
-            case s3.ErrCodeNoSuchBucket: // NotFound
-                fallthrough
-            default:
+                return false
+
+            // anything else, such as InvalidBucket
+            } else {
                 return false
             }
         }
