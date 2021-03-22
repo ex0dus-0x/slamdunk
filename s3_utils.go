@@ -55,16 +55,14 @@ func IsAuthenticated() bool {
     return true
 }
 
-// Attempt to parse out the current user's region, if set in the config or by envvar. Otherwise return
-// the default, which is `us-east-1`
-// TODO
-func GetUserRegion() string {
-    return "us-east-1"
-}
-
-
 // Does a single `HeadBucket` operation against a target bucket given a name and region.
-func HeadBucketWrap(target string, region string) bool {
+func CheckBucketExists(target string, region string) bool {
+
+    // if a region is not specified, we'll use a default so the SDK doesn't panic on MissingRegion
+    if region == NoRegion || region == "" {
+        region = "us-east-1"
+    }
+
     // configure session to work in specific region
     sess, _ := session.NewSession(&aws.Config{
         Region: aws.String(region)},
@@ -103,24 +101,4 @@ func HeadBucketWrap(target string, region string) bool {
         }
     }
     return true
-}
-
-
-// Helper that iterates through each region to check if the bucket exists using HeadBucket.
-// Returns bool and also region if bucket is found.
-func CheckBucketExists(target string, region string) (bool, string) {
-
-    // check if specific region is found to check against, is a lot faster
-    // should return true, ie if resolver figured out a region beforehand for you
-    if region != NoRegion {
-        return HeadBucketWrap(target, region), region
-    }
-
-    // otherwise enumerate over each region and check
-    for _, iterRegion := range GetBucketRegions() {
-        if HeadBucketWrap(target, iterRegion) == true {
-            return true, iterRegion
-        }
-    }
-    return false, ""
 }

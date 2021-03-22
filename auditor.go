@@ -1,7 +1,6 @@
 package slamdunk
 
 import (
-    "fmt"
     "errors"
 )
 
@@ -10,15 +9,11 @@ import (
 func Auditor(bucket string, action string) error {
 
     // check first if bucket actually exists
-    ok, region := CheckBucketExists(bucket, NoRegion)
-    if ok != true {
+    if !CheckBucketExists(bucket, NoRegion) {
         return errors.New("Specified bucket does not exist in any region.")
     }
 
-    fmt.Println(region)
-
     // indicate whether the user is authenticated or not
-
 
     return nil
 }

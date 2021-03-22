@@ -67,11 +67,8 @@ func GetCNAME(url string) (string, error) {
 //
 // 1. Check HTTP GET response for S3 metadata
 // 2. Check DNS records for a S3 URL CNAME
-// 3. Parse data as XML and check tags for any S3 metadata
-// 4. Check if URL itself is a bucket name
-//
-// TODO: %C0 Trick
-// TODO: Torrent
+// 3. Check if URL itself is a bucket name
+// 4. Parse data as XML and check tags for any S3 metadata
 func Resolver(url string) (*ResolverStatus, error) {
     // sanity: must not already be an S3 URL
     if strings.Contains(url, "amazonaws.com") {
@@ -79,26 +76,7 @@ func Resolver(url string) (*ResolverStatus, error) {
     }
 
     // get both a qualified URL and normal relative URL
-    var fullUrl string
-    var relativeUrl string
-
-    // if input is relative, construct full and save both
-    if !strings.Contains(url, "http") {
-        fullUrl = "http://" + url
-        relativeUrl = url
-
-    // other way around
-    } else {
-        fullUrl = url
-
-        // remove prepended protocol
-        if strings.Contains(url, "http://") {
-            relativeUrl = strings.TrimPrefix(url, "http://")
-        } else if strings.Contains(url, "https://") {
-            relativeUrl = strings.TrimPrefix(url, "https://")
-        }
-        relativeUrl = strings.TrimSuffix(relativeUrl, "/")
-    }
+    fullUrl, relativeUrl := GenerateUrlPair(url)
 
     // default status, nothing found
     status := ResolverStatus {
@@ -124,6 +102,10 @@ func Resolver(url string) (*ResolverStatus, error) {
         return nil, err
     }
 
+    /////////////////////////////////
+    // FIRST CHECK: Request Headers
+    /////////////////////////////////
+
     // sanity: check for `Server` header to be AmazonS3, but may be changed by proxy or CDN
     server := resp.Header.Get("Server")
     if server == "AmazonS3" {
@@ -135,6 +117,18 @@ func Resolver(url string) (*ResolverStatus, error) {
     if region != "" {
         status.Region = region
     }
+
+    // if both are present, check for takeover string and dip
+    if status.Bucket != NoBucket && status.Region != NoRegion {
+        if strings.Contains(string(bytedata), "NoSuchBucket") {
+            status.Takeover = true
+        }
+        return &status, nil
+    }
+
+    ///////////////////////////////
+    // SECOND CHECK: CNAME Records
+    ///////////////////////////////
 
     // check if URL points to a S3 URL in any CNAME records. A bucket may use a CDN that
     // masks the original S3 URL, so this may not return anything even if it is a bucket
@@ -157,13 +151,12 @@ func Resolver(url string) (*ResolverStatus, error) {
             status.Bucket = expr2Matches[1]
         }
 
-        // bail if both regexes failed to match for some reason and continue forward
-        // with parsing the body.
+        // shouldn't happen, but continue checks if bucket name couldn't be found
         if status.Bucket == NoBucket {
             goto bodyCheck
         }
 
-        // do a very quick check in the body of data for NoSuchBucket and dip
+        // otherwise do a quick takeover check and return
         if strings.Contains(string(bytedata), "NoSuchBucket") {
             status.Takeover = true
         }
@@ -172,10 +165,22 @@ func Resolver(url string) (*ResolverStatus, error) {
 
 bodyCheck:
 
-    // attempt to serialize into proper XML
+    ///////////////////////////////////
+    /// THIRD CHECK: URL AS BUCKET NAME
+    ///////////////////////////////////
+
+    if CheckBucketExists(relativeUrl, status.Region) {
+        status.Bucket = relativeUrl
+    }
+
+    ///////////////////////////////////
+    /// FINAL CHECK: HTTP XML RESPONSE
+    ///////////////////////////////////
+
+    // attempt to serialize into proper XML, if not, return
     xml := etree.NewDocument()
     if err := xml.ReadFromBytes(bytedata); err != nil {
-        goto other
+        return &status, nil
     }
 
     // if `Error` root is present, encountered a S3 error page
@@ -194,30 +199,38 @@ bodyCheck:
             status.Bucket = errTag.SelectElement("BucketName").Text()
 
         // AccessDenied | NoSuchKey | etc: bucket exists, can't parse name
-        // We'll also yield back from returning and do other checks to see if we can
-        // still get a bucket name and/or region
         } else {
             status.Bucket = SomeBucket
-            goto other
         }
-        return &status, nil
     }
 
     // if `ListBucketResult` is present, encountered an open bucket
     if resTag := xml.FindElement("ListBucketResult"); resTag != nil {
         status.Bucket = resTag.SelectElement("Name").Text()
-        return &status, nil
-    }
-
-other:
-
-    // TODO: if --faster, get current region and set if no region has been parsed so far
-
-    // check to see if URL itself is a bucket name
-    if ok, region := CheckBucketExists(relativeUrl, status.Region); ok {
-        status.Bucket = relativeUrl
-        status.Region = region
     }
     return &status, nil
 }
 
+// Helper that takes a URL in any format and generates a FQDN and a relative URL
+func GenerateUrlPair(url string) (string, string) {
+    var fullUrl, relativeUrl string
+
+    // if input is relative, construct full and save both
+    if !strings.Contains(url, "http") {
+        fullUrl = "http://" + url
+        relativeUrl = url
+
+    // other way around
+    } else {
+        fullUrl = url
+
+        // remove prepended protocol
+        if strings.Contains(url, "http://") {
+            relativeUrl = strings.TrimPrefix(url, "http://")
+        } else if strings.Contains(url, "https://") {
+            relativeUrl = strings.TrimPrefix(url, "https://")
+        }
+        relativeUrl = strings.TrimSuffix(relativeUrl, "/")
+    }
+    return fullUrl, relativeUrl
+}
