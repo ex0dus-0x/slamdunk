@@ -68,6 +68,9 @@ func GetCNAME(url string) (string, error) {
 // 2. Check DNS records for a S3 URL CNAME
 // 3. Parse data as XML and check tags for any S3 metadata
 // 4. Check if URL itself is a bucket name
+//
+// TODO: %C0 Trick
+// TODO: Torrent
 func Resolver(url string) (*ResolverStatus, error) {
     // sanity: must not already be an S3 URL
     if strings.Contains(url, "amazonaws.com") {
@@ -167,31 +170,31 @@ bodyCheck:
     // attempt to serialize into proper XML
     xml := etree.NewDocument()
     if err := xml.ReadFromBytes(bytedata); err != nil {
-        goto otherchecks
+        goto other
     }
 
     // if `Error` root is present, encountered a S3 error page
     if errTag := xml.FindElement("Error"); errTag != nil {
-        var bucketName string
 
         // get string for Code tag used to indicate error
         code := errTag.SelectElement("Code").Text()
 
         // NoSuchBucket: bucket deleted, but takeover is possible!
         if code == "NoSuchBucket" {
-            bucketName = errTag.SelectElement("BucketName").Text()
+            status.Bucket = errTag.SelectElement("BucketName").Text()
             status.Takeover = true
 
         // PermanentRedirect: wrong region, shouldn't be reached
         } else if code == "PermanentRedirect" {
-            bucketName = errTag.SelectElement("BucketName").Text()
+            status.Bucket = errTag.SelectElement("BucketName").Text()
 
         // AccessDenied | NoSuchKey | etc: bucket exists, can't parse name
+        // We'll also yield back from returning and do other checks to see if we can
+        // still get a bucket name and/or region
         } else {
-            bucketName = SomeBucket
+            status.Bucket = SomeBucket
+            goto other
         }
-
-        status.Bucket = bucketName
         return &status, nil
     }
 
@@ -203,7 +206,7 @@ bodyCheck:
 
     // TODO: other XML data that may be returned
 
-otherchecks:
+other:
 
     // check to see if URL itself is a bucket name
     if CheckBucketExists(relativeUrl) {
