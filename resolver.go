@@ -3,6 +3,7 @@ package slamdunk
 import (
     "io"
     "net"
+    "time"
     "errors"
     "strconv"
     "strings"
@@ -107,8 +108,13 @@ func Resolver(url string) (*ResolverStatus, error) {
         Takeover: false,
     }
 
+    // stop hanging on requests that time out
+    client := http.Client{
+        Timeout: 3 * time.Second,
+    }
+
     // GET request to url and parse out data
-    resp, err := http.Get(fullUrl)
+    resp, err := client.Get(fullUrl)
     if err != nil {
         return nil, err
     }
@@ -118,11 +124,10 @@ func Resolver(url string) (*ResolverStatus, error) {
         return nil, err
     }
 
-    // sanity: check for `Server` header to be AmazonS3, if not, return
-    // TODO: more research to see if `Server` header can be manipulated for S3
+    // sanity: check for `Server` header to be AmazonS3, but may be changed by proxy or CDN
     server := resp.Header.Get("Server")
-    if server == "" || server != "AmazonS3" {
-        return &status, nil
+    if server == "AmazonS3" {
+        status.Bucket = SomeBucket
     }
 
     // check if region is set in headers as well
@@ -204,13 +209,14 @@ bodyCheck:
         return &status, nil
     }
 
-    // TODO: other XML data that may be returned
-
 other:
 
+    // TODO: if --faster, get current region and set if no region has been parsed so far
+
     // check to see if URL itself is a bucket name
-    if CheckBucketExists(relativeUrl) {
+    if ok, region := CheckBucketExists(relativeUrl, status.Region); ok {
         status.Bucket = relativeUrl
+        status.Region = region
     }
     return &status, nil
 }

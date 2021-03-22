@@ -48,7 +48,8 @@ func main() {
         Commands: []*cli.Command {
             {
                 Name: "audit",
-                Usage: "Given bucket name(s), and/or a file with newline-seperated bucket names, audit permissions.",
+                Usage: `Given bucket name(s), and/or a file with newline-seperated bucket names, audit permissions. 
+                By default, READ-based permissions will be run only to ensure no detrimental changes are made to the bucket.`,
                 Flags: []cli.Flag {
                     &cli.StringSliceFlag {
                         Name: "name",
@@ -61,10 +62,16 @@ func main() {
                         Aliases: []string{"f"},
                     },
                     &cli.StringFlag {
-                        Name: "action",
+                        Name: "enable",
+                        Usage: "Enable another action to run alongside the default checks.",
+                    },
+                    &cli.StringFlag {
+                        Name: "enable-set",
+                        Usage: "Enable another set of actions to run alongside the default checks.",
+                    },
+                    &cli.StringFlag {
+                        Name: "only",
                         Usage: "Run only a specific action from the playbook against the bucket(s).",
-                        Aliases: []string{"a"},
-                        Value: "all",
                     },
                 },
                 Action: func(c *cli.Context) error {
@@ -86,6 +93,12 @@ func main() {
                     }
 
                     //action := c.String("action")
+
+                    // stores contents for making an ASCII table
+                    outputMap := [][]string{}
+                    header := []string{"Bucket Name", "Permission", "Enabled?"}
+
+                    OutputTable(outputMap, header)
                     return nil
                 },
             },
@@ -108,6 +121,11 @@ func main() {
                         Usage: "Display only URLs that resolve to a bucket (default is true).",
                         Aliases: []string{"m"},
                         Value: true,
+                    },
+                    &cli.BoolFlag {
+                        Name: "fast",
+                        Usage: "If set, will skip URLs without S3 header, and enumerate bucket names only in your region. Faster, but may be imprecise (default is false).",
+                        Value: false,
                     },
                     &cli.StringFlag {
                         Name: "output",
@@ -135,7 +153,7 @@ func main() {
 
                     // stores contents for making an ASCII table
                     outputMap := [][]string{}
-                    header := []string{"URL", "Bucket Name", "Region", "Bucket Takeover?"}
+                    header := []string{"URL", "Bucket Name", "Region", "Vulnerable to Takeover?"}
 
                     // stores result to write-append to output file
 
