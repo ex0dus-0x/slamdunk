@@ -74,21 +74,13 @@ func Resolver(url string) (*ResolverStatus, error) {
         return nil, errors.New("Already a S3 URL, no need to resolve further.")
     }
 
-    // default status, nothing found
-    status := ResolverStatus {
-        Url: url,
-        Bucket: NoBucket,
-        Region: NoRegion,
-        Takeover: false,
-    }
-
     // get both a qualified URL and normal relative URL
     var fullUrl string
     var relativeUrl string
 
     // if input is relative, construct full and save both
     if !strings.Contains(url, "http") {
-        fullUrl = "http://" + url + "/"
+        fullUrl = "http://" + url
         relativeUrl = url
 
     // other way around
@@ -101,6 +93,15 @@ func Resolver(url string) (*ResolverStatus, error) {
         } else if strings.Contains(url, "https://") {
             relativeUrl = strings.TrimPrefix(url, "https://")
         }
+        relativeUrl = strings.TrimSuffix(relativeUrl, "/")
+    }
+
+    // default status, nothing found
+    status := ResolverStatus {
+        Url: relativeUrl,
+        Bucket: NoBucket,
+        Region: NoRegion,
+        Takeover: false,
     }
 
     // GET request to url and parse out data
