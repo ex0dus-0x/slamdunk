@@ -4,9 +4,12 @@ import (
     "errors"
 )
 
-// Runs a specific action, or all actions from the playbook against the
-// bucket(s) that are parsed out within the auditor object.
-func Auditor(bucket string, action string) error {
+type Auditor struct {
+    playbook map[string]Action
+}
+
+// Run configured auditor on bucket and store output
+func (a *Auditor) Run(bucket string) error {
 
     // check first if bucket actually exists
     if !CheckBucketExists(bucket, NoRegion) {

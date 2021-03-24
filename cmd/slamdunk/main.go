@@ -3,6 +3,7 @@ package main
 import (
     "os"
     "log"
+    "fmt"
     "bufio"
     "errors"
     "syscall"
@@ -31,15 +32,61 @@ func ReadLines(path string) (*[]string, error) {
     return &lines, scanner.Err()
 }
 
+type ResolveStats struct {
+    // buckets successfully parsed out
+    Buckets             []string
+
+    // number of URLs successfully processed
+    UrlsProcessed       int
+
+    // number of URLS failed to process (ie timeout)
+    UrlsFailed          int
+
+    // S3 endpoints identified, even if name can't be found
+    Endpoints           int
+
+    // how many endpoints can be taken over
+    TakeoverPossible    int
+}
+
+// Finalize by writing bucket names to a filepath, and displaying stats to user.
+func (r *ResolveStats) Output(path string) error {
+
+    // if path is specified write bucket names to path
+    if path != "" {
+        file, err := os.OpenFile(path, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0644)
+        if err != nil {
+            return err
+        }
+        defer file.Close()
+
+        // write each entry as a line
+        writer := bufio.NewWriter(file)
+        for _, data := range r.Buckets {
+            _, _ = writer.WriteString(data + "\n")
+        }
+        writer.Flush()
+    }
+
+    // output rest of the stats
+    fmt.Printf("\nURLs Processed: %d\n", r.UrlsProcessed)
+    fmt.Printf("URLs Failed: %d\n\n", r.UrlsFailed)
+    fmt.Printf("S3 Endpoints Found: %d\n", r.Endpoints)
+    fmt.Printf("Bucket Names Identified: %d\n", len(r.Buckets))
+    fmt.Printf("Bucket Takeovers Possible: %d\n\n", r.TakeoverPossible)
+    return nil
+}
+
 // Helper to render and output an ASCII table
-func OutputTable(outputMap [][]string, header []string) {
+func OutputTable(outputTable [][]string, header []string) {
     table := tablewriter.NewWriter(os.Stdout)
     table.SetHeader(header)
-    for _, v := range outputMap {
+    for _, v := range outputTable {
         table.Append(v)
     }
     table.Render()
 }
+
 
 func main() {
     app := &cli.App {
@@ -75,8 +122,6 @@ func main() {
                     },
                 },
                 Action: func(c *cli.Context) error {
-
-                    // required arguments
                     names := c.StringSlice("name")
                     file := c.String("file")
                     if len(names) == 0 && file == "" {
@@ -92,13 +137,17 @@ func main() {
                         names = append(names, *vals...)
                     }
 
-                    //action := c.String("action")
-
                     // stores contents for making an ASCII table
-                    outputMap := [][]string{}
+                    outputTable := [][]string{}
                     header := []string{"Bucket Name", "Permission", "Enabled?"}
 
-                    OutputTable(outputMap, header)
+                    // audit each bucket and handle accordingly
+                    // TODO
+                    for _, bucket := range names {
+                        log.Printf("Auditing %s...\n", bucket)
+                    }
+
+                    OutputTable(outputTable, header)
                     return nil
                 },
             },
@@ -122,11 +171,6 @@ func main() {
                         Aliases: []string{"m"},
                         Value: true,
                     },
-                    &cli.BoolFlag {
-                        Name: "fast",
-                        Usage: "If set, will skip URLs without S3 header, and enumerate bucket names only in your region. Faster, but may be imprecise (default is false).",
-                        Value: false,
-                    },
                     &cli.StringFlag {
                         Name: "output",
                         Usage: "Path where resultant buckets only are stored, seperated by newline.",
@@ -134,8 +178,6 @@ func main() {
                     },
                 },
                 Action: func(c *cli.Context) error {
-
-                    // required arguments
                     urls := c.StringSlice("url")
                     file := c.String("file")
                     if len(urls) == 0 && file == "" {
@@ -152,10 +194,11 @@ func main() {
                     }
 
                     // stores contents for making an ASCII table
-                    outputMap := [][]string{}
+                    outputTable := [][]string{}
                     header := []string{"URL", "Bucket Name", "Region", "Vulnerable to Takeover?"}
 
-                    // stores result to write-append to output file
+                    // processed stats from resolving
+                    var stats ResolveStats
 
                     // handle keyboard interrupts to output table with content so far
                     channel := make(chan os.Signal)
@@ -165,10 +208,8 @@ func main() {
                         log.Println("Ctrl+C pressed, interrupting execution...")
 
                         // on exception, first display what's already stored in output
-                        OutputTable(outputMap, header)
-
-                        // then if outputList is populated, write to path specified on disk
-
+                        OutputTable(outputTable, header)
+                        stats.Output(c.String("output"))
                         os.Exit(0)
                     }()
 
@@ -178,16 +219,34 @@ func main() {
                         resolved, err := slamdunk.Resolver(url)
                         if err != nil {
                             log.Print(err)
+                            stats.UrlsFailed += 1
                             continue
                         }
+
+                        // successfully processed a URL
+                        stats.UrlsProcessed += 1
 
                         // skip URLs that don't resolve to buckets
                         if c.Bool("matches") && !resolved.HasBucket() {
                             continue
                         }
-                        outputMap = append(outputMap, resolved.GenTableRow())
+
+                        // successfully processed a S3 endpoint
+                        stats.Endpoints += 1
+                        outputTable = append(outputTable, resolved.GenTableRow())
+
+                        // skip adding to output list if it doesn't have name
+                        if resolved.Bucket != slamdunk.SomeBucket {
+                            stats.Buckets = append(stats.Buckets, resolved.Bucket)
+                        }
+                        if resolved.Takeover {
+                            stats.TakeoverPossible += 1
+                        }
                     }
-                    OutputTable(outputMap, header)
+
+                    // output table and stats, write file if option specified
+                    OutputTable(outputTable, header)
+                    stats.Output(c.String("output"))
                     return nil
                 },
             },
@@ -205,24 +264,24 @@ func main() {
                     playbook := slamdunk.NewPlayBook()
 
                     // stores contents for making an ASCII table
-                    outputMap := [][]string{}
+                    outputTable := [][]string{}
                     header := []string{"Action", "Description", "Equivalent Command"}
 
                     // search for action if specified
                     actionName := c.String("action")
                     if actionName != "" {
                         if action, ok := playbook[actionName]; ok {
-                            outputMap = append(outputMap, action.TableEntry(actionName))
+                            outputTable = append(outputTable, action.TableEntry(actionName))
                         } else {
                             return errors.New("Cannot find specified action in playbook.")
                         }
                     } else {
                         for name, action := range playbook {
-                            outputMap = append(outputMap, action.TableEntry(name))
+                            outputTable = append(outputTable, action.TableEntry(name))
                         }
                     }
 
-                    OutputTable(outputMap, header)
+                    OutputTable(outputTable, header)
                     return nil
                 },
             },
