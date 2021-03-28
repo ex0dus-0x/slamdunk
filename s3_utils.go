@@ -10,35 +10,6 @@ import (
     "github.com/aws/aws-sdk-go/service/s3"
 )
 
-
-// Helper to retrieve identifiers for all bucket regions
-func GetBucketRegions() []string {
-    return []string{
-        "us-east-1", // default
-        "us-east-2",
-        "us-west-1",
-        "us-west-2",
-        "ap-south-1",
-        "ap-northeast-3",
-        "ap-northeast-2",
-        "ap-southeast-1",
-        "ap-southeast-2",
-        "ap-northeast-1",
-        "ca-central-1",
-        "eu-central-1",
-        "eu-west-1",
-        "eu-west-2",
-        "eu-west-3",
-        "eu-north-1",
-        "sa-east-1",
-
-        // china regions report "Forbidden" even if bucket doesn't exist
-        "cn-north-1",
-        "cn-northwest-1",
-    }
-}
-
-
 // Helper used to check if the current user is authenticated, as some permissions are configured
 // to work only if its by an authenticated user. We won't parse the credentials if it exists, as the
 // S3 SDK should be doing that for us.
@@ -68,6 +39,8 @@ func CheckBucketExists(target string, region string) bool {
         Region: aws.String(region)},
     )
     svc := s3.New(sess)
+
+    // create new wrapped input for the specific operation
     input := &s3.HeadBucketInput{
         Bucket: aws.String(target),
     }

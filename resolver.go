@@ -3,6 +3,7 @@ package slamdunk
 import (
     "io"
     "net"
+    "log"
     "time"
     "errors"
     "strconv"
@@ -106,7 +107,14 @@ func Resolver(url string) (*ResolverStatus, error) {
     // FIRST CHECK: Request Headers
     /////////////////////////////////
 
-    // sanity: check for `Server` header to be AmazonS3, but may be changed by proxy or CDN
+    log.Println("Starting First Check: Request Headers")
+
+    // skip if Google Cloud headers are present
+    if resp.Header.Get("X-GUploader-UploadID") != "" {
+        return &status, nil
+    }
+
+    // check for `Server` header to be AmazonS3, but may be changed by proxy or CDN
     server := resp.Header.Get("Server")
     if server == "AmazonS3" {
         status.Bucket = SomeBucket
@@ -118,17 +126,11 @@ func Resolver(url string) (*ResolverStatus, error) {
         status.Region = region
     }
 
-    // if both are present, check for takeover string and dip
-    if status.Bucket != NoBucket && status.Region != NoRegion {
-        if strings.Contains(string(bytedata), "NoSuchBucket") {
-            status.Takeover = true
-        }
-        return &status, nil
-    }
-
     ///////////////////////////////
     // SECOND CHECK: CNAME Records
     ///////////////////////////////
+
+    log.Println("Starting Second Check: CNAME Records")
 
     // check if URL points to a S3 URL in any CNAME records. A bucket may use a CDN that
     // masks the original S3 URL, so this may not return anything even if it is a bucket
@@ -169,6 +171,8 @@ bodyCheck:
     /// THIRD CHECK: URL AS BUCKET NAME
     ///////////////////////////////////
 
+    log.Println("Starting Third Check: URL as Bucket Name")
+
     if CheckBucketExists(relativeUrl, status.Region) {
         status.Bucket = relativeUrl
     }
@@ -183,8 +187,12 @@ bodyCheck:
         return &status, nil
     }
 
+    // TODO: Check for GCloud error
+
     // if `Error` root is present, encountered a S3 error page
     if errTag := xml.FindElement("Error"); errTag != nil {
+
+        log.Println("Starting Final Check: Parsing XML Error")
 
         // get string for Code tag used to indicate error
         code := errTag.SelectElement("Code").Text()
@@ -206,6 +214,7 @@ bodyCheck:
 
     // if `ListBucketResult` is present, encountered an open bucket
     if resTag := xml.FindElement("ListBucketResult"); resTag != nil {
+        log.Println("Starting Final Check: Parsing XML Front Manner")
         status.Bucket = resTag.SelectElement("Name").Text()
     }
     return &status, nil

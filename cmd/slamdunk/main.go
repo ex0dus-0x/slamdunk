@@ -51,7 +51,6 @@ type ResolveStats struct {
 
 // Finalize by writing bucket names to a filepath, and displaying stats to user.
 func (r *ResolveStats) Output(path string) error {
-
     // if path is specified write bucket names to path
     if path != "" {
         file, err := os.OpenFile(path, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0644)
@@ -78,12 +77,13 @@ func (r *ResolveStats) Output(path string) error {
 }
 
 // Helper to render and output an ASCII table
-func OutputTable(outputTable [][]string, header []string) {
+func PrintTable(header []string, content [][]string) {
     table := tablewriter.NewWriter(os.Stdout)
     table.SetHeader(header)
-    for _, v := range outputTable {
-        table.Append(v)
-    }
+    table.SetAutoMergeCellsByColumnIndex([]int{0})
+    table.SetRowLine(true)
+    table.SetAutoWrapText(false)
+    table.AppendBulk(content)
     table.Render()
 }
 
@@ -137,17 +137,17 @@ func main() {
                         names = append(names, *vals...)
                     }
 
-                    // stores contents for making an ASCII table
-                    outputTable := [][]string{}
-                    header := []string{"Bucket Name", "Permission", "Enabled?"}
-
                     // audit each bucket and handle accordingly
-                    // TODO
+                    auditor := slamdunk.NewAuditor("all")
                     for _, bucket := range names {
                         log.Printf("Auditing %s...\n", bucket)
+                        if err := auditor.Run(bucket); err != nil {
+                            return err
+                        }
                     }
 
-                    OutputTable(outputTable, header)
+                    header := []string{"Bucket Name", "Permission", "Enabled?"}
+                    PrintTable(header, auditor.Table())
                     return nil
                 },
             },
@@ -208,7 +208,7 @@ func main() {
                         log.Println("Ctrl+C pressed, interrupting execution...")
 
                         // on exception, first display what's already stored in output
-                        OutputTable(outputTable, header)
+                        PrintTable(header, outputTable)
                         stats.Output(c.String("output"))
                         os.Exit(0)
                     }()
@@ -245,7 +245,7 @@ func main() {
                     }
 
                     // output table and stats, write file if option specified
-                    OutputTable(outputTable, header)
+                    PrintTable(header, outputTable)
                     stats.Output(c.String("output"))
                     return nil
                 },
@@ -281,7 +281,7 @@ func main() {
                         }
                     }
 
-                    OutputTable(outputTable, header)
+                    PrintTable(header, outputTable)
                     return nil
                 },
             },

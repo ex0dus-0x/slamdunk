@@ -1,15 +1,13 @@
 package slamdunk
 
 import (
-    "fmt"
-    "strings"
+    "bytes"
     "github.com/aws/aws-sdk-go/aws"
-    "github.com/aws/aws-sdk-go/aws/session"
     "github.com/aws/aws-sdk-go/service/s3"
 )
 
 const (
-    TempObject = "temporary.txt"
+    TempObject = "Test upload for testing PutObject permissions"
 )
 
 // Encapsulates all of the actions we can execute against a target bucket.
@@ -23,8 +21,8 @@ type Action struct {
     // equivalent aws CLI command
     Cmd            string
 
-    // function called to consume bucket name for testing
-    Callback       func(string) bool
+    // function called to consume AWS session and wrapped input for testing
+    Callback       func(s3.S3, string) bool
 }
 
 func (a *Action) TableEntry(name string) []string {
@@ -36,18 +34,15 @@ func NewPlayBook() PlayBook {
         "ListObjects": Action {
             Description: "Read and enumerate over objects in bucket.",
             Cmd: "list-objects --bucket <NAME>",
-            Callback: func(name string) bool {
-                svc := s3.New(session.New())
+            Callback: func(svc s3.S3, name string) bool {
                 input := &s3.ListObjectsInput{
                     Bucket:  aws.String(name),
                     MaxKeys: aws.Int64(2),
                 }
-                result, err := svc.ListObjects(input)
+                _, err := svc.ListObjects(input)
                 if err != nil {
-                    fmt.Println(err.Error())
                     return false
                 }
-                fmt.Println(result)
                 return true
             },
         },
@@ -55,19 +50,17 @@ func NewPlayBook() PlayBook {
         "PutObject": Action {
             Description: "Write object to bucket with key.",
             Cmd: "put-object --bucket <NAME> --key <KEY> --body <FILE>",
-            Callback: func(name string) bool {
-                svc := s3.New(session.New())
+            Callback: func(svc s3.S3, name string) bool {
+                reader := bytes.NewReader([]byte(TempObject))
                 input := &s3.PutObjectInput{
-                    Body:   aws.ReadSeekCloser(strings.NewReader(TempObject)),
+                    Body:   aws.ReadSeekCloser(reader),
                     Bucket: aws.String(name),
                     Key:    aws.String(TempObject),
                 }
-                result, err := svc.PutObject(input)
+                _, err := svc.PutObject(input)
                 if err != nil {
-                    fmt.Println(err.Error())
                     return false
                 }
-                fmt.Println(result)
                 return true
             },
         },
@@ -75,15 +68,22 @@ func NewPlayBook() PlayBook {
         "GetBucketAcl": Action {
             Description: "Read bucket's access control list.",
             Cmd: "get-bucket-acl --bucket <NAME>",
-            Callback: func(name string) bool {
-                return false
+            Callback: func(svc s3.S3, name string) bool {
+                input := &s3.GetBucketAclInput{
+                    Bucket: aws.String(name),
+                }
+                _, err := svc.GetBucketAcl(input)
+                if err != nil {
+                    return false
+                }
+                return true
             },
         },
 
         "PutBucketAcl": Action {
             Description: "Write a new access control list for a bucket.",
             Cmd: "put-bucket-acl --bucket <NAME> --grant-full-control emailaddress=<EMAIL>",
-            Callback: func(name string) bool {
+            Callback: func(svc s3.S3, name string) bool {
                 return false
             },
         },
@@ -91,7 +91,7 @@ func NewPlayBook() PlayBook {
         "GetBucketPolicy": Action {
             Description: "Read a bucket's policy.",
             Cmd: "get-bucket-policy --bucket <NAME>",
-            Callback: func(name string) bool {
+            Callback: func(svc s3.S3, name string) bool {
                 return false
             },
         },
@@ -99,7 +99,7 @@ func NewPlayBook() PlayBook {
         "PutBucketPolicy": Action {
             Description: "Write a new policy for the bucket.",
             Cmd: "put-bucket-acl --bucket <NAME> --policy <FILE>",
-            Callback: func(name string) bool {
+            Callback: func(svc s3.S3, name string) bool {
                 return false
             },
         },
@@ -107,7 +107,7 @@ func NewPlayBook() PlayBook {
         "GetBucketCors": Action {
             Description: "Read a bucket's cross-original resource sharing configuration.",
             Cmd: "get-bucket-cors --bucket <NAME>",
-            Callback: func(name string) bool {
+            Callback: func(svc s3.S3, name string) bool {
                 return false
             },
         },
@@ -115,7 +115,7 @@ func NewPlayBook() PlayBook {
         "PutBucketCors": Action {
             Description: "Read a bucket's cross-original resource sharing configuration.",
             Cmd: "put-bucket-cors --bucket <NAME> --cors-configuration <FILE>",
-            Callback: func(name string) bool {
+            Callback: func(svc s3.S3, name string) bool {
                 return false
             },
         },
