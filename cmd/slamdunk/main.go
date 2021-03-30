@@ -92,8 +92,21 @@ func main() {
                         names = append(names, *vals...)
                     }
 
+                    header := []string{"Bucket Name", "Permission", "Enabled?"}
+
                     // audit each bucket and handle accordingly
                     auditor := slamdunk.NewAuditor("all")
+
+                    // handle keyboard interrupts to output table with content so far
+                    channel := make(chan os.Signal)
+                    signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
+                    go func() {
+                        <-channel
+                        log.Println("Ctrl+C pressed, interrupting execution...")
+                        PrintTable(header, auditor.Table())
+                        os.Exit(0)
+                    }()
+
                     for _, bucket := range names {
                         log.Printf("Auditing %s...\n", bucket)
                         if err := auditor.Run(bucket); err != nil {
@@ -101,7 +114,6 @@ func main() {
                         }
                     }
 
-                    header := []string{"Bucket Name", "Permission", "Enabled?"}
                     PrintTable(header, auditor.Table())
                     return nil
                 },
@@ -162,8 +174,6 @@ func main() {
                     go func() {
                         <-channel
                         log.Println("Ctrl+C pressed, interrupting execution...")
-
-                        // on exception, first display what's already stored in output
                         PrintTable(header, resolver.Table())
                         if err := resolver.OutputStats(outputPath); err != nil {
                             log.Fatal(err)

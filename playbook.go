@@ -1,7 +1,10 @@
 package slamdunk
 
 import (
+    "fmt"
     "bytes"
+    "encoding/json"
+
     "github.com/aws/aws-sdk-go/aws"
     "github.com/aws/aws-sdk-go/service/s3"
 )
@@ -39,8 +42,7 @@ func NewPlayBook() PlayBook {
                     Bucket:  aws.String(name),
                     MaxKeys: aws.Int64(2),
                 }
-                _, err := svc.ListObjects(input)
-                if err != nil {
+                if _, err := svc.ListObjects(input); err != nil {
                     return false
                 }
                 return true
@@ -57,8 +59,7 @@ func NewPlayBook() PlayBook {
                     Bucket: aws.String(name),
                     Key:    aws.String(TempObject),
                 }
-                _, err := svc.PutObject(input)
-                if err != nil {
+                if _, err := svc.PutObject(input); err != nil {
                     return false
                 }
                 return true
@@ -72,8 +73,7 @@ func NewPlayBook() PlayBook {
                 input := &s3.GetBucketAclInput{
                     Bucket: aws.String(name),
                 }
-                _, err := svc.GetBucketAcl(input)
-                if err != nil {
+                if _, err := svc.GetBucketAcl(input); err != nil {
                     return false
                 }
                 return true
@@ -95,8 +95,7 @@ func NewPlayBook() PlayBook {
                 input := &s3.GetBucketPolicyInput{
                     Bucket: aws.String(name),
                 }
-                _, err := svc.GetBucketPolicy(input)
-                if err != nil {
+                if _, err := svc.GetBucketPolicy(input); err != nil {
                     return false
                 }
                 return true
@@ -107,7 +106,32 @@ func NewPlayBook() PlayBook {
             Description: "Write a new policy for the bucket.",
             Cmd: "put-bucket-acl --bucket <NAME> --policy <FILE>",
             Callback: func(svc s3.S3, name string) bool {
-                return false
+                testPolicy := map[string]interface{}{
+                    "Version": "2021-01-01",
+                    "Statement": []map[string]interface{}{
+                        {
+                            "Sid":       "AddPerm",
+                            "Effect":    "Allow",
+                            "Principal": "*",
+                            "Action": []string{
+                                "s3:GetObject",
+                            },
+                            "Resource": []string{
+                                fmt.Sprintf("arn:aws:s3:::%s/*", name),
+                            },
+                        },
+                    },
+                }
+
+                policy, _ := json.Marshal(testPolicy)
+                input := &s3.PutBucketPolicyInput{
+                    Bucket: aws.String(name),
+                    Policy: aws.String(string(policy)),
+                }
+                if _, err := svc.PutBucketPolicy(input); err != nil {
+                    return false
+                }
+                return true
             },
         },
 
@@ -118,8 +142,7 @@ func NewPlayBook() PlayBook {
                 input := &s3.GetBucketCorsInput{
                     Bucket: aws.String(name),
                 }
-                _, err := svc.GetBucketCors(input)
-                if err != nil {
+                if _, err := svc.GetBucketCors(input); err != nil {
                     return false
                 }
                 return true
@@ -164,8 +187,36 @@ func NewPlayBook() PlayBook {
             },
         },
 
+        "GetBucketVersioning": Action {
+            Description: "Get versioning status of the bucket.",
+            Cmd: "get-bucket-versioning --bucket <NAME>",
+            Callback: func(svc s3.S3, name string) bool {
+                input := &s3.GetBucketVersioningInput{
+                    Bucket: aws.String(name),
+                }
+                _, err := svc.GetBucketVersioning(input)
+                if err != nil {
+                    return false
+                }
+                return true
+            },
+        },
+
+        "GetBucketEncryption": Action {
+            Description: "Get encryption configuration of bucket, if any.",
+            Cmd: "get-bucket-encryption --bucket <NAME>",
+            Callback: func(svc s3.S3, name string) bool {
+                input := &s3.GetBucketEncryptionInput{
+                    Bucket: aws.String(name),
+                }
+                _, err := svc.GetBucketEncryption(input)
+                if err != nil {
+                    return false
+                }
+                return true
+            },
+        },
+
         // GetBucketPublicAccessBlock
-        // GetBucketVersioning
-        // GetEncryptionConfiguration
     }
 }

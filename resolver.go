@@ -173,7 +173,8 @@ func (r *Resolver) Resolve(url string) error {
             goto bodyCheck
         }
 
-        // otherwise do a quick takeover check and return
+
+        // otherwise do a quick takeover check and return.
         if strings.Contains(string(bytedata), "NoSuchBucket") {
             r.TakeoverPossible += 1
             status.Takeover = true
@@ -310,20 +311,28 @@ func (r *Resolver) OutputStats(path string) error {
         }
         defer file.Close()
 
-        // write each entry as a line
+        // write each entry as a line, ignore takeovers since they don't exist
         writer := bufio.NewWriter(file)
         for _, data := range r.Buckets {
-            _, _ = writer.WriteString(data.Bucket + "\n")
+            if !data.Takeover && data.Bucket != SomeBucket {
+                _, _ = writer.WriteString(data.Bucket + "\n")
+            }
         }
         writer.Flush()
+    }
+
+    var nameCount int
+    for _, data := range r.Buckets {
+        if data.Bucket != SomeBucket {
+            nameCount += 1
+        }
     }
 
     // output rest of the stats
     fmt.Printf("\nURLs Processed: %d\n", r.UrlsProcessed)
     fmt.Printf("URLs Failed: %d\n\n", r.UrlsFailed)
     fmt.Printf("S3 Endpoints Found: %d\n", r.Endpoints)
-    fmt.Printf("Bucket Names Identified: %d\n", len(r.Buckets))
+    fmt.Printf("Bucket Names Identified: %d\n", nameCount)
     fmt.Printf("Bucket Takeovers Possible: %d\n\n", r.TakeoverPossible)
     return nil
 }
-

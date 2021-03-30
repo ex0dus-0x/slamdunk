@@ -51,7 +51,7 @@ func (a *Auditor) Run(bucket string) error {
 
     // initialize new session for use against all playbook actions
     sess, _ := session.NewSession(&aws.Config{
-        Region: aws.String("us-east-1")},
+        Region: aws.String(region)},
     )
     svc := s3.New(sess)
     if svc == nil {
