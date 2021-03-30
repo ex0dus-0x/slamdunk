@@ -2,9 +2,12 @@ package slamdunk
 
 import (
     "io"
+    "os"
+    "fmt"
     "net"
     "log"
     "time"
+    "bufio"
     "errors"
     "strconv"
     "strings"
@@ -20,8 +23,7 @@ const (
     NoRegion = "No region found"
 )
 
-// Result status for a given target URL. If bucket is nil, means that our current methods 
-// could not extrapolate a bucket name.
+// Result status for a given target URL
 type ResolverStatus struct {
     // original url
     Url         string
@@ -36,31 +38,37 @@ type ResolverStatus struct {
     Takeover    bool
 }
 
-func (r *ResolverStatus) HasBucket() bool {
-    return r.Bucket != NoBucket
-}
-
 // Given a returned status, create an entry that can be used for display as a row in an ASCII table
-func (r *ResolverStatus) GenTableRow() []string {
+func (r *ResolverStatus) Row() []string {
     return []string{r.Url, r.Bucket, r.Region, strconv.FormatBool(r.Takeover)}
 }
 
 
-// Traverse a CNAME chain to the end and return the resultant URL
-func GetCNAME(url string) (string, error) {
-    // do lookup
-    cname, err := net.LookupCNAME(url)
-    if err != nil {
-        return "", errors.New("Domain name doesn't exist")
-    }
+type Resolver struct {
+    // buckets successfully parsed out
+    Buckets             []ResolverStatus
 
-    // remove trailing dots and compare
-    cname = strings.TrimSuffix(cname, ".")
-    url = strings.TrimSuffix(url, ".")
-    if cname == "" || cname == url {
-        return "", errors.New("Domain name is not a CNAME")
+    // number of URLs successfully processed
+    UrlsProcessed       int
+
+    // number of URLS failed to process (ie timeout)
+    UrlsFailed          int
+
+    // S3 endpoints identified, even if name can't be found
+    Endpoints           int
+
+    // how many endpoints can be taken over
+    TakeoverPossible    int
+}
+
+func NewResolver() *Resolver {
+    return &Resolver {
+        Buckets: []ResolverStatus{},
+        UrlsProcessed: 0,
+        UrlsFailed: 0,
+        Endpoints: 0,
+        TakeoverPossible: 0,
     }
-    return cname, nil
 }
 
 // Given a single URL, run a set of actions against it in order to resolve a bucket name, while also
@@ -70,10 +78,11 @@ func GetCNAME(url string) (string, error) {
 // 2. Check DNS records for a S3 URL CNAME
 // 3. Check if URL itself is a bucket name
 // 4. Parse data as XML and check tags for any S3 metadata
-func Resolver(url string) (*ResolverStatus, error) {
+func (r *Resolver) Resolve(url string) error {
     // sanity: must not already be an S3 URL
     if strings.Contains(url, "amazonaws.com") {
-        return nil, errors.New("Already a S3 URL, no need to resolve further.")
+        r.UrlsFailed += 1
+        return errors.New("Already a S3 URL, no need to resolve further.")
     }
 
     // get both a qualified URL and normal relative URL
@@ -95,13 +104,18 @@ func Resolver(url string) (*ResolverStatus, error) {
     // GET request to url and parse out data
     resp, err := client.Get(fullUrl)
     if err != nil {
-        return nil, err
+        r.UrlsFailed += 1
+        return err
     }
     defer resp.Body.Close()
     bytedata, err := io.ReadAll(resp.Body)
     if err != nil {
-        return nil, err
+        r.UrlsFailed += 1
+        return err
     }
+
+    // can successfully ping the endpoint
+    r.UrlsProcessed += 1
 
     /////////////////////////////////
     // FIRST CHECK: Request Headers
@@ -111,7 +125,8 @@ func Resolver(url string) (*ResolverStatus, error) {
 
     // skip if Google Cloud headers are present
     if resp.Header.Get("X-GUploader-UploadID") != "" {
-        return &status, nil
+        r.UrlsFailed += 1
+        return errors.New("Cannot deal with Google Cloud Storage yet.")
     }
 
     // check for `Server` header to be AmazonS3, but may be changed by proxy or CDN
@@ -160,9 +175,13 @@ func Resolver(url string) (*ResolverStatus, error) {
 
         // otherwise do a quick takeover check and return
         if strings.Contains(string(bytedata), "NoSuchBucket") {
+            r.TakeoverPossible += 1
             status.Takeover = true
         }
-        return &status, nil
+
+        r.Endpoints += 1
+        r.Buckets = append(r.Buckets, status)
+        return nil
     }
 
 bodyCheck:
@@ -173,8 +192,10 @@ bodyCheck:
 
     log.Println("Starting Third Check: URL as Bucket Name")
 
-    if CheckBucketExists(relativeUrl, status.Region) {
+    // status.Region being set helps make this faster, otherwise will enumerate through all regions
+    if val, region := CheckBucketExists(relativeUrl, status.Region); val {
         status.Bucket = relativeUrl
+        status.Region = region
     }
 
     ///////////////////////////////////
@@ -184,7 +205,7 @@ bodyCheck:
     // attempt to serialize into proper XML, if not, return
     xml := etree.NewDocument()
     if err := xml.ReadFromBytes(bytedata); err != nil {
-        return &status, nil
+        goto end
     }
 
     // TODO: Check for GCloud error
@@ -201,6 +222,7 @@ bodyCheck:
         if code == "NoSuchBucket" {
             status.Bucket = errTag.SelectElement("BucketName").Text()
             status.Takeover = true
+            r.TakeoverPossible += 1
 
         // PermanentRedirect: wrong region, shouldn't be reached
         } else if code == "PermanentRedirect" {
@@ -217,7 +239,16 @@ bodyCheck:
         log.Println("Starting Final Check: Parsing XML Front Manner")
         status.Bucket = resTag.SelectElement("Name").Text()
     }
-    return &status, nil
+
+end:
+
+    // if name isn't unknown increment endpoint
+    if status.Bucket != NoBucket {
+        r.Endpoints += 1
+    }
+
+    r.Buckets = append(r.Buckets, status)
+    return nil
 }
 
 // Helper that takes a URL in any format and generates a FQDN and a relative URL
@@ -243,3 +274,56 @@ func GenerateUrlPair(url string) (string, string) {
     }
     return fullUrl, relativeUrl
 }
+
+// Traverse a CNAME chain to the end and return the resultant URL
+func GetCNAME(url string) (string, error) {
+    // do lookup
+    cname, err := net.LookupCNAME(url)
+    if err != nil {
+        return "", errors.New("Domain name doesn't exist")
+    }
+
+    // remove trailing dots and compare
+    cname = strings.TrimSuffix(cname, ".")
+    url = strings.TrimSuffix(url, ".")
+    if cname == "" || cname == url {
+        return "", errors.New("Domain name is not a CNAME")
+    }
+    return cname, nil
+}
+
+func (r *Resolver) Table() [][]string {
+    var contents [][]string
+    for _, status := range r.Buckets {
+        contents = append(contents, status.Row())
+    }
+    return contents
+}
+
+// Finalize by writing bucket names to a filepath, and displaying stats to user.
+func (r *Resolver) OutputStats(path string) error {
+    // if path is specified write bucket names to path
+    if path != "" {
+        file, err := os.OpenFile(path, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0644)
+        if err != nil {
+            return err
+        }
+        defer file.Close()
+
+        // write each entry as a line
+        writer := bufio.NewWriter(file)
+        for _, data := range r.Buckets {
+            _, _ = writer.WriteString(data.Bucket + "\n")
+        }
+        writer.Flush()
+    }
+
+    // output rest of the stats
+    fmt.Printf("\nURLs Processed: %d\n", r.UrlsProcessed)
+    fmt.Printf("URLs Failed: %d\n\n", r.UrlsFailed)
+    fmt.Printf("S3 Endpoints Found: %d\n", r.Endpoints)
+    fmt.Printf("Bucket Names Identified: %d\n", len(r.Buckets))
+    fmt.Printf("Bucket Takeovers Possible: %d\n\n", r.TakeoverPossible)
+    return nil
+}
+

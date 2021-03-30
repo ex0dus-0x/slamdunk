@@ -40,9 +40,12 @@ func NewAuditor(actions string) *Auditor {
 func (a *Auditor) Run(bucket string) error {
 
     // check first if bucket actually exists
-    if !CheckBucketExists(bucket, NoRegion) {
+    val, region := CheckBucketExists(bucket, NoRegion)
+    if !val {
         return errors.New("Specified bucket does not exist in any region.")
     }
+
+    log.Printf("%s found in %s region\n", bucket, region)
 
     // indicate whether the user is authenticated or not
 

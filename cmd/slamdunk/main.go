@@ -3,7 +3,6 @@ package main
 import (
     "os"
     "log"
-    "fmt"
     "bufio"
     "errors"
     "syscall"
@@ -30,50 +29,6 @@ func ReadLines(path string) (*[]string, error) {
         lines = append(lines, scanner.Text())
     }
     return &lines, scanner.Err()
-}
-
-type ResolveStats struct {
-    // buckets successfully parsed out
-    Buckets             []string
-
-    // number of URLs successfully processed
-    UrlsProcessed       int
-
-    // number of URLS failed to process (ie timeout)
-    UrlsFailed          int
-
-    // S3 endpoints identified, even if name can't be found
-    Endpoints           int
-
-    // how many endpoints can be taken over
-    TakeoverPossible    int
-}
-
-// Finalize by writing bucket names to a filepath, and displaying stats to user.
-func (r *ResolveStats) Output(path string) error {
-    // if path is specified write bucket names to path
-    if path != "" {
-        file, err := os.OpenFile(path, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0644)
-        if err != nil {
-            return err
-        }
-        defer file.Close()
-
-        // write each entry as a line
-        writer := bufio.NewWriter(file)
-        for _, data := range r.Buckets {
-            _, _ = writer.WriteString(data + "\n")
-        }
-        writer.Flush()
-    }
-
-    // output rest of the stats
-    fmt.Printf("\nURLs Processed: %d\n", r.UrlsProcessed)
-    fmt.Printf("URLs Failed: %d\n\n", r.UrlsFailed)
-    fmt.Printf("S3 Endpoints Found: %d\n", r.Endpoints)
-    fmt.Printf("Bucket Names Identified: %d\n", len(r.Buckets))
-    fmt.Printf("Bucket Takeovers Possible: %d\n\n", r.TakeoverPossible)
-    return nil
 }
 
 // Helper to render and output an ASCII table
@@ -193,12 +148,13 @@ func main() {
                         urls = append(urls, *vals...)
                     }
 
+                    outputPath := c.String("output")
+
                     // stores contents for making an ASCII table
-                    outputTable := [][]string{}
                     header := []string{"URL", "Bucket Name", "Region", "Vulnerable to Takeover?"}
 
-                    // processed stats from resolving
-                    var stats ResolveStats
+                    // actual object that interfaces with resolving
+                    resolver := slamdunk.NewResolver()
 
                     // handle keyboard interrupts to output table with content so far
                     channel := make(chan os.Signal)
@@ -208,45 +164,26 @@ func main() {
                         log.Println("Ctrl+C pressed, interrupting execution...")
 
                         // on exception, first display what's already stored in output
-                        PrintTable(header, outputTable)
-                        stats.Output(c.String("output"))
+                        PrintTable(header, resolver.Table())
+                        if err := resolver.OutputStats(outputPath); err != nil {
+                            log.Fatal(err)
+                        }
                         os.Exit(0)
                     }()
 
                     // resolve each and parse output for display
                     for _, url := range urls {
                         log.Printf("Attempting to resolve %s...\n", url)
-                        resolved, err := slamdunk.Resolver(url)
+                        err := resolver.Resolve(url)
                         if err != nil {
-                            log.Print(err)
-                            stats.UrlsFailed += 1
+                            log.Println(err)
                             continue
-                        }
-
-                        // successfully processed a URL
-                        stats.UrlsProcessed += 1
-
-                        // skip URLs that don't resolve to buckets
-                        if c.Bool("matches") && !resolved.HasBucket() {
-                            continue
-                        }
-
-                        // successfully processed a S3 endpoint
-                        stats.Endpoints += 1
-                        outputTable = append(outputTable, resolved.GenTableRow())
-
-                        // skip adding to output list if it doesn't have name
-                        if resolved.Bucket != slamdunk.SomeBucket {
-                            stats.Buckets = append(stats.Buckets, resolved.Bucket)
-                        }
-                        if resolved.Takeover {
-                            stats.TakeoverPossible += 1
                         }
                     }
-
-                    // output table and stats, write file if option specified
-                    PrintTable(header, outputTable)
-                    stats.Output(c.String("output"))
+                    PrintTable(header, resolver.Table())
+                    if err := resolver.OutputStats(outputPath); err != nil {
+                        return err
+                    }
                     return nil
                 },
             },
@@ -264,24 +201,24 @@ func main() {
                     playbook := slamdunk.NewPlayBook()
 
                     // stores contents for making an ASCII table
-                    outputTable := [][]string{}
-                    header := []string{"Action", "Description", "Equivalent Command"}
+                    table := [][]string{}
 
                     // search for action if specified
                     actionName := c.String("action")
                     if actionName != "" {
                         if action, ok := playbook[actionName]; ok {
-                            outputTable = append(outputTable, action.TableEntry(actionName))
+                            table = append(table, action.TableEntry(actionName))
                         } else {
                             return errors.New("Cannot find specified action in playbook.")
                         }
                     } else {
                         for name, action := range playbook {
-                            outputTable = append(outputTable, action.TableEntry(name))
+                            table = append(table, action.TableEntry(name))
                         }
                     }
 
-                    PrintTable(header, outputTable)
+                    header := []string{"Action", "Description", "Equivalent Command"}
+                    PrintTable(header, table)
                     return nil
                 },
             },

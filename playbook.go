@@ -92,7 +92,14 @@ func NewPlayBook() PlayBook {
             Description: "Read a bucket's policy.",
             Cmd: "get-bucket-policy --bucket <NAME>",
             Callback: func(svc s3.S3, name string) bool {
-                return false
+                input := &s3.GetBucketPolicyInput{
+                    Bucket: aws.String(name),
+                }
+                _, err := svc.GetBucketPolicy(input)
+                if err != nil {
+                    return false
+                }
+                return true
             },
         },
 
@@ -108,7 +115,14 @@ func NewPlayBook() PlayBook {
             Description: "Read a bucket's cross-original resource sharing configuration.",
             Cmd: "get-bucket-cors --bucket <NAME>",
             Callback: func(svc s3.S3, name string) bool {
-                return false
+                input := &s3.GetBucketCorsInput{
+                    Bucket: aws.String(name),
+                }
+                _, err := svc.GetBucketCors(input)
+                if err != nil {
+                    return false
+                }
+                return true
             },
         },
 
@@ -120,10 +134,38 @@ func NewPlayBook() PlayBook {
             },
         },
 
-        // GetBucketLogging
+        "GetBucketLogging": Action {
+            Description: "Gets logging status of bucket and relevant permissions.",
+            Cmd: "get-bucket-logging --bucket <NAME>",
+            Callback: func(svc s3.S3, name string) bool {
+                input := &s3.GetBucketLoggingInput{
+                    Bucket: aws.String(name),
+                }
+                _, err := svc.GetBucketLogging(input)
+                if err != nil {
+                    return false
+                }
+                return true
+            },
+        },
+
+        "GetBucketWebsite": Action {
+            Description: "Gets configuration if S3 bucket is configured to serve a site.",
+            Cmd: "get-bucket-website --bucket <NAME>",
+            Callback: func(svc s3.S3, name string) bool {
+                input := &s3.GetBucketWebsiteInput{
+                    Bucket: aws.String(name),
+                }
+                _, err := svc.GetBucketWebsite(input)
+                if err != nil {
+                    return false
+                }
+                return true
+            },
+        },
+
         // GetBucketPublicAccessBlock
         // GetBucketVersioning
-        // GetBucketWebsite
         // GetEncryptionConfiguration
     }
 }
