@@ -296,7 +296,9 @@ func GetCNAME(url string) (string, error) {
 func (r *Resolver) Table() [][]string {
     var contents [][]string
     for _, status := range r.Buckets {
-        contents = append(contents, status.Row())
+        if status.Bucket != NoBucket {
+            contents = append(contents, status.Row())
+        }
     }
     return contents
 }

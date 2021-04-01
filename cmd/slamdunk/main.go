@@ -51,7 +51,7 @@ func main() {
             {
                 Name: "audit",
                 Usage: `Given bucket name(s), and/or a file with newline-seperated bucket names, audit permissions. 
-                By default, READ-based permissions will be run only to ensure no detrimental changes are made to the bucket.`,
+                By default, all supported permissions will be tested against each bucket specified.`,
                 Flags: []cli.Flag {
                     &cli.StringSliceFlag {
                         Name: "name",
@@ -63,17 +63,10 @@ func main() {
                         Usage: "File with multiple target bucket names to audit.",
                         Aliases: []string{"f"},
                     },
-                    &cli.StringFlag {
+                    &cli.StringSliceFlag {
                         Name: "enable",
                         Usage: "Enable another action to run alongside the default checks.",
-                    },
-                    &cli.StringFlag {
-                        Name: "enable-set",
-                        Usage: "Enable another set of actions to run alongside the default checks.",
-                    },
-                    &cli.StringFlag {
-                        Name: "only",
-                        Usage: "Run only a specific action from the playbook against the bucket(s).",
+                        Aliases: []string{"e"},
                     },
                 },
                 Action: func(c *cli.Context) error {
@@ -93,6 +86,8 @@ func main() {
                     }
 
                     header := []string{"Bucket Name", "Permission", "Enabled?"}
+
+                    // TODO: parse specific actions
 
                     // audit each bucket and handle accordingly
                     auditor := slamdunk.NewAuditor("all")
