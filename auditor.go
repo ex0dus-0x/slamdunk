@@ -15,12 +15,13 @@ type Audit map[string]map[string]bool
 // Represents a single auditor session, where a playbook is constructed from a configuration
 // and applied against single buckets, and bulk results can be outputted.
 type Auditor struct {
+    Profile     string
     Playbook    map[string]Action
     Results     Audit
 }
 
 // Instantiate a new auditor based on the action specified
-func NewAuditor(actions string) *Auditor {
+func NewAuditor(actions string, profile string) *Auditor {
     // create a new empty playbook
     var playbook PlayBook
     if actions == "all" {
@@ -31,6 +32,7 @@ func NewAuditor(actions string) *Auditor {
     results := Audit{}
 
     return &Auditor {
+        Profile: profile,
         Playbook: playbook,
         Results: results,
     }
@@ -48,11 +50,15 @@ func (a *Auditor) Run(bucket string) error {
     log.Printf("%s found in %s region\n", bucket, region)
 
     // indicate whether the user is authenticated or not
+    // get ARN from profile, if not possible then error
 
     // initialize new session for use against all playbook actions
-    sess, _ := session.NewSession(&aws.Config{
-        Region: aws.String(region)},
-    )
+    sess, _ := session.NewSessionWithOptions(session.Options{
+        Profile: a.Profile,
+        Config: aws.Config{
+            Region: aws.String(region),
+        },
+    })
     svc := s3.New(sess)
     if svc == nil {
         return errors.New("Could not instantiate new S3 client")

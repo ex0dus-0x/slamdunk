@@ -17,7 +17,8 @@ func GetRegions() []string {
         "us-east-1",
         "us-west-1",
         "us-west-2",
-        /*
+
+        /*  TODO: ignore for now
         "ap-south-1",
         "ap-northeast-3",
         "ap-northeast-2",

@@ -173,6 +173,10 @@ func (r *Resolver) Resolve(url string) error {
             goto bodyCheck
         }
 
+        // if bucket name found but no region, region must be us-east-1
+        if status.Bucket != NoBucket && status.Region == NoRegion {
+            status.Region = "us-east-1"
+        }
 
         // otherwise do a quick takeover check and return.
         if strings.Contains(string(bytedata), "NoSuchBucket") {

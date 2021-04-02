@@ -64,9 +64,15 @@ func main() {
                         Aliases: []string{"f"},
                     },
                     &cli.StringSliceFlag {
-                        Name: "enable",
-                        Usage: "Enable another action to run alongside the default checks.",
+                        Name: "only",
+                        Usage: "Runs only specified permissions against buckets.",
                         Aliases: []string{"e"},
+                    },
+                    &cli.StringFlag {
+                        Name: "profile",
+                        Usage: "Specifies another IAM profile to be used when auditing buckets (default is `default`).",
+                        Value: "default",
+                        Aliases: []string{"p"},
                     },
                 },
                 Action: func(c *cli.Context) error {
@@ -90,7 +96,7 @@ func main() {
                     // TODO: parse specific actions
 
                     // audit each bucket and handle accordingly
-                    auditor := slamdunk.NewAuditor("all")
+                    auditor := slamdunk.NewAuditor("all", c.String("profile"))
 
                     // handle keyboard interrupts to output table with content so far
                     channel := make(chan os.Signal)
