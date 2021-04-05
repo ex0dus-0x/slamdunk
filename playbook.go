@@ -153,7 +153,11 @@ func NewPlayBook() PlayBook {
             Description: "Read a bucket's cross-original resource sharing configuration.",
             Cmd: "put-bucket-cors --bucket <NAME> --cors-configuration <FILE>",
             Callback: func(svc s3.S3, name string) bool {
-                return false
+                input := &s3.PutBucketCorsInput{}
+                if _, err := svc.PutBucketCors(input); err != nil {
+                    return false
+                }
+                return true
             },
         },
 
@@ -164,8 +168,7 @@ func NewPlayBook() PlayBook {
                 input := &s3.GetBucketLoggingInput{
                     Bucket: aws.String(name),
                 }
-                _, err := svc.GetBucketLogging(input)
-                if err != nil {
+                if _, err := svc.GetBucketLogging(input); err != nil {
                     return false
                 }
                 return true
@@ -179,8 +182,7 @@ func NewPlayBook() PlayBook {
                 input := &s3.GetBucketWebsiteInput{
                     Bucket: aws.String(name),
                 }
-                _, err := svc.GetBucketWebsite(input)
-                if err != nil {
+                if _, err := svc.GetBucketWebsite(input); err != nil {
                     return false
                 }
                 return true
@@ -194,8 +196,7 @@ func NewPlayBook() PlayBook {
                 input := &s3.GetBucketVersioningInput{
                     Bucket: aws.String(name),
                 }
-                _, err := svc.GetBucketVersioning(input)
-                if err != nil {
+                if _, err := svc.GetBucketVersioning(input); err != nil {
                     return false
                 }
                 return true
@@ -209,8 +210,7 @@ func NewPlayBook() PlayBook {
                 input := &s3.GetBucketEncryptionInput{
                     Bucket: aws.String(name),
                 }
-                _, err := svc.GetBucketEncryption(input)
-                if err != nil {
+                if _, err := svc.GetBucketEncryption(input); err != nil {
                     return false
                 }
                 return true

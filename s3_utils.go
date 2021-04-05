@@ -9,33 +9,17 @@ import (
     "github.com/aws/aws-sdk-go/aws/session"
     "github.com/aws/aws-sdk-go/aws/awserr"
     "github.com/aws/aws-sdk-go/service/s3"
+    "github.com/aws/aws-sdk-go/service/s3/s3manager"
 )
 
-func GetRegions() []string {
-    return []string{
-        "us-east-2",
-        "us-east-1",
-        "us-west-1",
-        "us-west-2",
-
-        /*  TODO: ignore for now
-        "ap-south-1",
-        "ap-northeast-3",
-        "ap-northeast-2",
-        "ap-southeast-1",
-        "ap-southeast-2",
-        "ap-northeast-1",
-        "ca-central-1",
-        "cn-north-1",
-        "cn-northwest-1",
-        "eu-central-1",
-        "eu-west-1",
-        "eu-west-2",
-        "eu-west-3",
-        "eu-north-1",
-        "sa-east-1",
-        */
+// Determine the bucket region using a default regionHint of `us-east-1`
+func GetRegion(bucket string) (string, error) {
+    sess := session.Must(session.NewSession())
+    region, err := s3manager.GetBucketRegion(aws.BackgroundContext(), sess, bucket, "us-east-1")
+    if err != nil {
+        return "", err
     }
+    return region, nil
 }
 
 // Helper used to check if the current user is authenticated, as some permissions are configured
@@ -101,13 +85,13 @@ func HeadBucket(target string, region string) bool {
 // Helper that checks if a bucket exists within a region, returning the status and region name. 
 // If no region is specified, the supported list of AWS regions will be checked and returned.
 func CheckBucketExists(target string, region string) (bool, string) {
+    // if no region specified, try to figure it out and return
     if region == NoRegion || region == "" {
-        for _, r := range GetRegions() {
-            if val := HeadBucket(target, r); val {
-                return true, r
-            }
+        newRegion, err := GetRegion(target)
+        if err != nil {
+            return false, ""
         }
-        return false, ""
+        return true, newRegion
     }
     return HeadBucket(target, region), region
 }
