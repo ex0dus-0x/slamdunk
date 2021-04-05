@@ -79,13 +79,14 @@ func NewResolver() *Resolver {
 // 3. Check if URL itself is a bucket name
 // 4. Parse data as XML and check tags for any S3 metadata
 func (r *Resolver) Resolve(url string) error {
-    // sanity: must not already be an S3 URL
+    log.Println("Sanity check if already an AWS URL")
     if strings.Contains(url, "amazonaws.com") {
         r.UrlsFailed += 1
         return errors.New("Already a S3 URL, no need to resolve further.")
     }
 
     // get both a qualified URL and normal relative URL
+    log.Println("Creating relative and full URLs for HTTP and DNS.")
     fullUrl, relativeUrl := GenerateUrlPair(url)
 
     // default status, nothing found
@@ -102,6 +103,7 @@ func (r *Resolver) Resolve(url string) error {
     }
 
     // GET request to url and parse out data
+    log.Println("Sending GET to %s\n", fullUrl)
     resp, err := client.Get(fullUrl)
     if err != nil {
         r.UrlsFailed += 1
@@ -133,12 +135,14 @@ func (r *Resolver) Resolve(url string) error {
     server := resp.Header.Get("Server")
     if server == "AmazonS3" {
         status.Bucket = SomeBucket
+        log.Println("Detected AWS S3 bucket from URL")
     }
 
     // check if region is set in headers as well
     region := resp.Header.Get("x-amz-bucket-region")
     if region != "" {
         status.Region = region
+        log.Println("Detected AWS S3 bucket region from URL")
     }
 
     ///////////////////////////////
@@ -152,12 +156,15 @@ func (r *Resolver) Resolve(url string) error {
     potentialCname, _ := GetCNAME(relativeUrl);
     if strings.Contains(potentialCname, ".amazonaws.com") {
 
+        log.Println("Found AWS URL in CNAME, parsing further")
+
         // s3-<REGION>.amazonaws.com/<BUCKET_NAME>/<OBJECTS>
         expr1 := regexp.MustCompile(`s3-(?P<region>[^.]+).amazonaws.com/(?P<bucket>[^/]+)`)
         expr1Matches := expr1.FindStringSubmatch(potentialCname)
         if len(expr1Matches) != 0 {
             status.Region = expr1Matches[1]
             status.Bucket = expr1Matches[2]
+            log.Println("Matched: s3-%s.amazonaws.com/%s\n", status.Region, status.Bucket)
         }
 
         // <BUCKET_NAME>.s3.<REGION>.amazonaws.com/<OBJECTS>
@@ -166,10 +173,12 @@ func (r *Resolver) Resolve(url string) error {
         if len(expr2Matches) != 0 {
             status.Region = expr2Matches[2]
             status.Bucket = expr2Matches[1]
+            log.Println("Matched: %s.s3.%s.amazonaws.com\n", status.Bucket, status.Region)
         }
 
         // shouldn't happen, but continue checks if bucket name couldn't be found
         if status.Bucket == NoBucket {
+            log.Println("Continuing checks, parsing CNAME didn't work out")
             goto bodyCheck
         }
 
@@ -179,11 +188,14 @@ func (r *Resolver) Resolve(url string) error {
         }
 
         // otherwise do a quick takeover check and return.
+        log.Println("Checking for takeover")
         if strings.Contains(string(bytedata), "NoSuchBucket") {
             r.TakeoverPossible += 1
             status.Takeover = true
+            log.Println("Takeover is possible for parsed bucket")
         }
 
+        log.Println("Adding successful entry and returning")
         r.Endpoints += 1
         r.Buckets = append(r.Buckets, status)
         return nil
@@ -241,7 +253,7 @@ bodyCheck:
 
     // if `ListBucketResult` is present, encountered an open bucket
     if resTag := xml.FindElement("ListBucketResult"); resTag != nil {
-        log.Println("Starting Final Check: Parsing XML Front Manner")
+        log.Println("Starting Final Check: Parsing Open Bucket")
         status.Bucket = resTag.SelectElement("Name").Text()
     }
 

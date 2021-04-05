@@ -7,6 +7,7 @@ import (
     "errors"
     "syscall"
     "os/signal"
+    "io/ioutil"
 
     "github.com/urfave/cli/v2"
     "github.com/olekukonko/tablewriter"
@@ -47,6 +48,13 @@ func main() {
     app := &cli.App {
         Name: "slamdunk",
         Usage: "AWS S3 Bucket Permissions Auditor",
+        Flags: []cli.Flag {
+            &cli.BoolFlag{
+                Name: "verbose",
+                Usage: "If set, will print out log for debugging.",
+                Aliases: []string{"v"},
+            },
+        },
         Commands: []*cli.Command {
             {
                 Name: "audit",
@@ -76,6 +84,11 @@ func main() {
                     },
                 },
                 Action: func(c *cli.Context) error {
+                    if !c.Bool("verbose") {
+                        log.SetOutput(ioutil.Discard)
+                    }
+                    log.Printf("Starting slamdunk.")
+
                     names := c.StringSlice("name")
                     file := c.String("file")
                     if len(names) == 0 && file == "" {
@@ -90,15 +103,21 @@ func main() {
                         }
                         names = append(names, *vals...)
                     }
+                    log.Printf("Parsed out %d buckets for testing\n", len(names))
 
                     header := []string{"Bucket Name", "Permission", "Enabled?"}
 
-                    // TODO: parse specific actions
+                    // parse specific actions
+                    actions := []string{}
+                    if len(c.StringSlice("only")) != 0 {
+                        actions = c.StringSlice("only")
+                    }
 
                     // audit each bucket and handle accordingly
-                    auditor := slamdunk.NewAuditor("all", c.String("profile"))
+                    auditor := slamdunk.NewAuditor(actions, c.String("profile"))
 
                     // handle keyboard interrupts to output table with content so far
+                    log.Println("Installing signal handler to handle interrupts")
                     channel := make(chan os.Signal)
                     signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
                     go func() {
@@ -146,6 +165,11 @@ func main() {
                     },
                 },
                 Action: func(c *cli.Context) error {
+                    if !c.Bool("verbose") {
+                        log.SetOutput(ioutil.Discard)
+                    }
+                    log.Printf("Starting slamdunk.")
+
                     urls := c.StringSlice("url")
                     file := c.String("file")
                     if len(urls) == 0 && file == "" {
@@ -160,6 +184,7 @@ func main() {
                         }
                         urls = append(urls, *vals...)
                     }
+                    log.Printf("Number of URLs parsed for processing: %d\n", len(urls))
 
                     outputPath := c.String("output")
 
@@ -170,6 +195,7 @@ func main() {
                     resolver := slamdunk.NewResolver()
 
                     // handle keyboard interrupts to output table with content so far
+                    log.Println("Installing signal handler to handle interrupts")
                     channel := make(chan os.Signal)
                     signal.Notify(channel, os.Interrupt, syscall.SIGTERM)
                     go func() {
