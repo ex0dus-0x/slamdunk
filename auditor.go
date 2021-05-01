@@ -27,7 +27,22 @@ type Auditor struct {
 }
 
 // Instantiate a new auditor based on the actions specified. Empty slice means run all.
-func NewAuditor(actions []string, profile string) *Auditor {
+func NewAuditor(actions []string, profile string) (*Auditor, error) {
+
+    // check IAM metadata
+    fmt.Printf("\nYou are: ")
+	if !IsAuthenticated() {
+        fmt.Println("UNAUTHENTICATED")
+	} else {
+		// get ARN from profile, if not possible then error
+        log.Println("Parsing out current IAM profile's ARN")
+        arn, err := GetIAMUserARN(profile)
+        if err != nil {
+            return nil, err
+        }
+        fmt.Println(arn)
+	}
+    fmt.Println()
 
 	// if specific actions, clear playbook of those we don't care about
 	log.Println("Creating playbook based on actions to run")
@@ -47,7 +62,7 @@ func NewAuditor(actions []string, profile string) *Auditor {
 		Profile:  profile,
 		Playbook: playbook,
 		Results:  results,
-	}
+	}, nil
 }
 
 // Run configured auditor on a single bucket name, and store results in map for output.
@@ -59,18 +74,9 @@ func (a *Auditor) Run(bucket string) error {
 	if !val {
 		return errors.New("Specified bucket does not exist in any region.")
 	}
-
 	log.Printf("%s found in %s region\n", bucket, region)
 
-	// indicate whether the user is authenticated or not
-	if !IsAuthenticated() {
-		fmt.Println("No AWS credentials configured. Continuing auditing unauthenticated.")
-	} else {
-		// get ARN from profile, if not possible then error
-		log.Printf("Getting profile information.")
-	}
-
-	// initialize new session for use against all playbook actions
+	// initialize session for use with parsed region against all playbook actions
 	log.Println("Creating main session for auditing permissions")
 	sess, _ := session.NewSessionWithOptions(session.Options{
 		Profile: a.Profile,

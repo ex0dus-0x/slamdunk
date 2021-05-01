@@ -47,7 +47,7 @@ func PrintTable(header []string, content [][]string) {
 func main() {
     app := &cli.App {
         Name: "slamdunk",
-        Usage: "AWS S3 Bucket Permissions Auditor",
+        Usage: "Cloud Storage Permissions Auditor",
         Flags: []cli.Flag {
             &cli.BoolFlag{
                 Name: "verbose",
@@ -72,7 +72,7 @@ func main() {
                         Aliases: []string{"f"},
                     },
                     &cli.StringSliceFlag {
-                        Name: "only",
+                        Name: "perms",
                         Usage: "Runs only specified permissions against buckets.",
                         Aliases: []string{"e"},
                     },
@@ -109,12 +109,15 @@ func main() {
 
                     // parse specific actions
                     actions := []string{}
-                    if len(c.StringSlice("only")) != 0 {
-                        actions = c.StringSlice("only")
+                    if len(c.StringSlice("perms")) != 0 {
+                        actions = c.StringSlice("perms")
                     }
 
                     // audit each bucket and handle accordingly
-                    auditor := slamdunk.NewAuditor(actions, c.String("profile"))
+                    auditor, err := slamdunk.NewAuditor(actions, c.String("profile"))
+                    if err != nil {
+                        return err
+                    }
 
                     // handle keyboard interrupts to output table with content so far
                     log.Println("Installing signal handler to handle interrupts")
