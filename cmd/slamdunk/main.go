@@ -76,6 +76,11 @@ func main() {
                         Usage: "Runs only specified permissions against buckets.",
                         Aliases: []string{"e"},
                     },
+                    &cli.BoolFlag {
+                        Name: "write",
+                        Usage: "Run checks on WRITE permissions (WARNING: may alter content/configurations of configuration resources).",
+                        Aliases: []string{"w"},
+                    },
                     &cli.StringFlag {
                         Name: "profile",
                         Usage: "Specifies another IAM profile to be used when auditing buckets (default is `default`).",

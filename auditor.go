@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/fatih/color"
 )
 
 // Maps a bucket name to another map of actions and whether they are set
@@ -29,20 +30,21 @@ type Auditor struct {
 // Instantiate a new auditor based on the actions specified. Empty slice means run all.
 func NewAuditor(actions []string, profile string) (*Auditor, error) {
 
-    // check IAM metadata
-    fmt.Printf("\nYou are: ")
+	// check IAM metadata
+	fmt.Printf("\nYou are: ")
+	c := color.New(color.FgCyan).Add(color.Underline)
 	if !IsAuthenticated() {
-        fmt.Println("UNAUTHENTICATED")
+		c.Println("UNAUTHENTICATED")
 	} else {
 		// get ARN from profile, if not possible then error
-        log.Println("Parsing out current IAM profile's ARN")
-        arn, err := GetIAMUserARN(profile)
-        if err != nil {
-            return nil, err
-        }
-        fmt.Println(arn)
+		log.Println("Parsing out current IAM profile's ARN")
+		arn, err := GetIAMUserARN(profile)
+		if err != nil {
+			return nil, err
+		}
+		c.Println(arn)
 	}
-    fmt.Println()
+	fmt.Println()
 
 	// if specific actions, clear playbook of those we don't care about
 	log.Println("Creating playbook based on actions to run")

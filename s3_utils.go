@@ -7,7 +7,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-    "github.com/aws/aws-sdk-go/service/sts"
+	"github.com/aws/aws-sdk-go/service/sts"
 	"log"
 	"os"
 	"os/user"
@@ -41,17 +41,17 @@ func IsAuthenticated() bool {
 
 // Get the current IAM user's identity metadata, and return ARN
 func GetIAMUserARN(profile string) (string, error) {
-    sess, _ := session.NewSessionWithOptions(session.Options{
-        Profile: profile,
-    })
+	sess, _ := session.NewSessionWithOptions(session.Options{
+		Profile: profile,
+	})
 
-    svc := sts.New(sess)
-    input := &sts.GetCallerIdentityInput{}
-    result, err := svc.GetCallerIdentity(input)
-    if err != nil {
-        return "", err
-    }
-    return *result.Arn, nil
+	svc := sts.New(sess)
+	input := &sts.GetCallerIdentityInput{}
+	result, err := svc.GetCallerIdentity(input)
+	if err != nil {
+		return "", err
+	}
+	return *result.Arn, nil
 }
 
 // Does a single `HeadBucket` operation against a target bucket given a name and region.
