@@ -110,8 +110,6 @@ func main() {
                     }
                     log.Printf("Parsed out %d buckets for testing\n", len(names))
 
-                    header := []string{"Bucket Name", "Permission", "Enabled?"}
-
                     // parse specific actions
                     actions := []string{}
                     if len(c.StringSlice("perms")) != 0 {
@@ -131,7 +129,6 @@ func main() {
                     go func() {
                         <-channel
                         log.Println("Ctrl+C pressed, interrupting execution...")
-                        PrintTable(header, auditor.Table())
                         os.Exit(0)
                     }()
 
@@ -142,7 +139,7 @@ func main() {
                         }
                     }
 
-                    PrintTable(header, auditor.Table())
+                    auditor.Output()
                     return nil
                 },
             },

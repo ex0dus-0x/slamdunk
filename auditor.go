@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -29,20 +30,19 @@ type Auditor struct {
 
 // Instantiate a new auditor based on the actions specified. Empty slice means run all.
 func NewAuditor(actions []string, profile string) (*Auditor, error) {
+	log.Println("Parsing out current IAM profile's ARN")
 
 	// check IAM metadata
 	fmt.Printf("\nYou are: ")
-	c := color.New(color.FgCyan).Add(color.Underline)
 	if !IsAuthenticated() {
-		c.Println("UNAUTHENTICATED")
+		color.Red("UNAUTHENTICATED")
 	} else {
 		// get ARN from profile, if not possible then error
-		log.Println("Parsing out current IAM profile's ARN")
 		arn, err := GetIAMUserARN(profile)
 		if err != nil {
 			return nil, err
 		}
-		c.Println(arn)
+		color.Green(arn)
 	}
 	fmt.Println()
 
@@ -101,19 +101,48 @@ func (a *Auditor) Run(bucket string) error {
 	return nil
 }
 
-// Creates a tabulated version of the auditor results after processing buckets
-func (a *Auditor) Table() [][]string {
-	content := [][]string{}
+// Output valid permissions directly without instantiating table
+func (a *Auditor) Output() {
+	fmt.Printf("You have permissions for the following buckets:\n\n")
+	name := color.New(color.Bold)
 	for bucket, action := range a.Results {
+
+		// stores parsed permissions for each
+		readPerms := []string{}
+		writePerms := []string{}
 		for perm, result := range action {
-			var resultOut string
-			if result {
-				resultOut = "✔️"
-			} else {
-				resultOut = "❌"
+			// skip if permission could not be used
+			if !result {
+				continue
 			}
-			content = append(content, []string{bucket, perm, resultOut})
+
+			// categorize based on name
+			if strings.Contains(perm, "Get") || strings.Contains(perm, "List") {
+				readPerms = append(readPerms, perm)
+			} else if strings.Contains(perm, "Put") {
+				writePerms = append(writePerms, perm)
+			}
 		}
+		readLen := len(readPerms)
+		writeLen := len(writePerms)
+
+		if readLen == 0 && writeLen == 0 {
+			continue
+		}
+
+		// output information parsed
+		name.Println("* ", bucket)
+
+		if readLen != 0 {
+			name.Printf("\tREAD: ")
+			fmt.Printf("%v\n", readPerms)
+		}
+
+		if writeLen != 0 {
+			name.Printf("\tWRITE: ")
+			fmt.Printf("%v\n", writePerms)
+		}
+
+		fmt.Println()
 	}
-	return content
 }
