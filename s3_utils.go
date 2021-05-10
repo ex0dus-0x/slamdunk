@@ -33,7 +33,7 @@ func IsAuthenticated() bool {
 	path := fmt.Sprintf("%s/.aws/credentials", dir)
 
 	// filepath check
-    log.Println("Checking credentials path exists")
+	log.Println("Checking credentials path exists")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return false
 	}
@@ -46,7 +46,7 @@ func GetIAMUserARN(profile string) (string, error) {
 		Profile: profile,
 	})
 
-    log.Println("Running GetCallerIdentity to parse ARN")
+	log.Println("Running GetCallerIdentity to parse ARN")
 	svc := sts.New(sess)
 	input := &sts.GetCallerIdentityInput{}
 	result, err := svc.GetCallerIdentity(input)
@@ -58,29 +58,29 @@ func GetIAMUserARN(profile string) (string, error) {
 
 // Given a profile, parse out all accessible buckets, if possible
 func ListBuckets(profile string) (*[]string, error) {
-    sess, _ := session.NewSessionWithOptions(session.Options{
-        Profile: profile,
-        Config: aws.Config{
-            Region: aws.String("us-east-2"), // TODO: figure out beforehand
-        },
-    })
-    svc := s3.New(sess)
+	sess, _ := session.NewSessionWithOptions(session.Options{
+		Profile: profile,
+		Config: aws.Config{
+			Region: aws.String("us-east-2"), // TODO: figure out beforehand
+		},
+	})
+	svc := s3.New(sess)
 
-    // retrieve buckets and error handle
-    log.Println("Running ListBucket")
-    input := &s3.ListBucketsInput{}
-    result, err := svc.ListBuckets(input)
-    if err != nil {
-        return nil, err
-    }
+	// retrieve buckets and error handle
+	log.Println("Running ListBucket")
+	input := &s3.ListBucketsInput{}
+	result, err := svc.ListBuckets(input)
+	if err != nil {
+		return nil, err
+	}
 
-    // iterate over results and save to list to return
-    log.Println("Parsing out bucket names to return")
-    buckets := []string{}
-    for _, entry := range result.Buckets {
-        buckets = append(buckets, *entry.Name)
-    }
-    return &buckets, nil
+	// iterate over results and save to list to return
+	log.Println("Parsing out bucket names to return")
+	buckets := []string{}
+	for _, entry := range result.Buckets {
+		buckets = append(buckets, *entry.Name)
+	}
+	return &buckets, nil
 }
 
 // Does a single `HeadBucket` operation against a target bucket given a name and region.
@@ -97,7 +97,7 @@ func HeadBucket(target string, region string) bool {
 	}
 
 	// check to see if URL bucket exists
-    log.Println("Running HeadBucket")
+	log.Println("Running HeadBucket")
 	_, err := svc.HeadBucket(input)
 	if err != nil {
 
@@ -106,22 +106,22 @@ func HeadBucket(target string, region string) bool {
 		if aerr, ok := err.(awserr.Error); ok {
 			errMsg := aerr.Code()
 
-            log.Println("Parsing error message to properly return response")
+			log.Println("Parsing error message to properly return response")
 
 			// AccessDenied means bucket exists, unless in China region, which reports that for all
 			if (errMsg == "Forbidden") && (region != "cn-north-1") && (region != "cn-northwest-1") {
 				return true
 
-			// InvalidKey means bucket exists but points to a deleted object
+				// InvalidKey means bucket exists but points to a deleted object
 			} else if errMsg == s3.ErrCodeNoSuchKey {
 				return true
 
-			// missing* may be a s3 specific error, possible latency issues
+				// missing* may be a s3 specific error, possible latency issues
 			} else if (errMsg == "MissingEndpoint") || (errMsg == "MissingRegion") {
 				log.Println("May be encountering a rate limit/timeout.")
 				return false
 
-			// anything else, such as InvalidBucket
+				// anything else, such as InvalidBucket
 			} else {
 				return false
 			}
@@ -135,7 +135,7 @@ func HeadBucket(target string, region string) bool {
 func CheckBucketExists(target string, region string) (bool, string) {
 	// if no region specified, try to figure it out and return
 	if region == NoRegion || region == "" {
-        log.Println("Attempting to figure out region for bucket")
+		log.Println("Attempting to figure out region for bucket")
 		newRegion, err := GetRegion(target)
 		if err != nil {
 			return false, ""
