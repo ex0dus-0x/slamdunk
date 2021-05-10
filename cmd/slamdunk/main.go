@@ -2,6 +2,7 @@ package main
 
 import (
     "os"
+    "fmt"
     "log"
     "bufio"
     "errors"
@@ -59,7 +60,7 @@ func main() {
             {
                 Name: "audit",
                 Usage: `Given bucket name(s), and/or a file with newline-seperated bucket names, audit permissions. 
-                By default, all supported permissions will be tested against each bucket specified.`,
+                By default, only READ-based permissions will be tested against each bucket specified.`,
                 Flags: []cli.Flag {
                     &cli.StringSliceFlag {
                         Name: "name",
@@ -70,6 +71,11 @@ func main() {
                         Name: "file",
                         Usage: "File with multiple target bucket names to audit.",
                         Aliases: []string{"f"},
+                    },
+                    &cli.BoolFlag {
+                        Name: "list",
+                        Usage: "Get buckets that can be listed for the given scoped IAM principal, if ListBucket is allowed.",
+                        Aliases: []string{"l"},
                     },
                     &cli.StringSliceFlag {
                         Name: "perms",
@@ -83,8 +89,9 @@ func main() {
                     },
                     &cli.StringFlag {
                         Name: "profile",
-                        Usage: "Specifies another IAM profile to be used when auditing buckets (default is `default`).",
+                        Usage: "Specifies another IAM profile to be used when auditing buckets.",
                         Value: "default",
+                        DefaultText: "default",
                         Aliases: []string{"p"},
                     },
                 },
@@ -94,10 +101,13 @@ func main() {
                     }
                     log.Printf("Starting slamdunk.")
 
+                    // argparse out buckets to test
+                    log.Println("Argparsing for bucket names to audit")
                     names := c.StringSlice("name")
                     file := c.String("file")
-                    if len(names) == 0 && file == "" {
-                        return errors.New("Must specify both or either `--name` or `--file`.")
+                    list := c.Bool("list")
+                    if len(names) == 0 && file == "" && !list {
+                        return errors.New("Must specify all, some or one of `--name`, `--file`, or `--list`.")
                     }
 
                     // if file specified, append to bucket names
@@ -108,6 +118,17 @@ func main() {
                         }
                         names = append(names, *vals...)
                     }
+
+                    // if `--list` is set, grab buckets for current IAM principal, otherwise exit if denied
+                    if list {
+                        log.Println("Checking if we can parse buckets with ListBucket")
+                        listed, err := slamdunk.ListBuckets(c.String("profile"))
+                        if err != nil {
+                            return err
+                        }
+                        names = append(names, *listed...)
+                    }
+
                     log.Printf("Parsed out %d buckets for testing\n", len(names))
 
                     // parse specific actions
@@ -269,6 +290,6 @@ func main() {
 
     err := app.Run(os.Args)
     if err != nil {
-        log.Fatal(err)
+        fmt.Println("ERROR:", err)
     }
 }
