@@ -77,9 +77,9 @@ func main() {
 						Aliases: []string{"l"},
 					},
 					&cli.StringSliceFlag{
-						Name:    "perms",
-						Usage:   "Runs only specified permissions against buckets.",
-						Aliases: []string{"e"},
+						Name:    "perm",
+						Usage:   "Runs only specified permission against buckets. Can be invoked multiple times.",
+						Aliases: []string{"p"},
 					},
 					&cli.BoolFlag{
 						Name:    "write",
@@ -91,7 +91,7 @@ func main() {
 						Usage:       "Specifies an IAM profile to be used when auditing buckets. Use 'none' to test without any profiles.",
 						Value:       "default",
 						DefaultText: "default",
-						Aliases:     []string{"p"},
+						Aliases:     []string{"i"},
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -139,9 +139,10 @@ func main() {
 
 					// parse specific actions
 					actions := []string{}
-					if len(c.StringSlice("perms")) != 0 {
-						actions = c.StringSlice("perms")
+					if len(c.StringSlice("perm")) != 0 {
+						actions = c.StringSlice("perm")
 					}
+                    log.Println("Running actions", actions);
 
 					// audit each bucket and handle accordingly
 					auditor, err := slamdunk.NewAuditor(actions, profile)
