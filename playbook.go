@@ -1,16 +1,20 @@
 package slamdunk
 
 import (
-	"bytes"
+	"crypto/md5"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/s3"
 )
 
 const (
-	TempObject = "Test upload for testing PutObject permissions"
+	TempObject = "temp"
 )
 
 // Encapsulates all of the actions we can execute against a target bucket.
@@ -53,16 +57,42 @@ func NewPlayBook() PlayBook {
 			Description: "Write object to bucket with key.",
 			Cmd:         "put-object --bucket <NAME> --key <KEY> --body <FILE>",
 			Callback: func(svc s3.S3, name string) bool {
-				reader := bytes.NewReader([]byte(TempObject))
-				input := &s3.PutObjectInput{
-					Body:   aws.ReadSeekCloser(reader),
+
+				// get MD5 checksum for empty string
+				h := md5.New()
+				content := strings.NewReader("")
+				content.WriteTo(h)
+
+				resp, _ := svc.PutObjectRequest(&s3.PutObjectInput{
 					Bucket: aws.String(name),
 					Key:    aws.String(TempObject),
-				}
-				if _, err := svc.PutObject(input); err != nil {
+				})
+
+				// configure with MD5 checksum
+				md5s := base64.StdEncoding.EncodeToString(h.Sum(nil))
+				resp.HTTPRequest.Header.Set("Content-MD5", md5s)
+
+				// create a presigned url to send HTTP request to
+				url, err := resp.Presign(time.Minute * 15)
+				if err != nil {
 					return false
 				}
-				return true
+
+				// send request but with different body to force MD5 check to fail,
+				// thus not modifying the actual contents of the bucket
+				req, err := http.NewRequest("PUT", url, strings.NewReader("CONTENT"))
+				req.Header.Set("Content-MD5", md5s)
+				if err != nil {
+					return false
+				}
+
+				// a successful upload or a failed MD5 checksum check is fine
+				finalResp, err := http.DefaultClient.Do(req)
+				if finalResp.StatusCode == 200 || finalResp.StatusCode == 400 {
+					return true
+				} else {
+					return false
+				}
 			},
 		},
 
@@ -82,9 +112,27 @@ func NewPlayBook() PlayBook {
 
 		"PutBucketAcl": Action{
 			Description: "Write a new access control list for a bucket.",
-			Cmd:         "put-bucket-acl --bucket <NAME> --grant-full-control emailaddress=<EMAIL>",
+			Cmd:         "put-bucket-acl --bucket <NAME> --grant-* <KEY_VALUES>",
 			Callback: func(svc s3.S3, name string) bool {
-				return false
+
+				// get MD5 checksum for empty string
+				h := md5.New()
+				content := strings.NewReader("CONTENT")
+				content.WriteTo(h)
+
+				req, _ := svc.PutBucketAclRequest(&s3.PutBucketAclInput{
+					Bucket:    aws.String(name),
+					GrantRead: aws.String("uri=http://acs.amazonaws.com/groups/global/AllUsers"),
+				})
+
+				// configure with invalid MD5 checksum to fail actual modification
+				md5s := base64.StdEncoding.EncodeToString(h.Sum(nil))
+				req.HTTPRequest.Header.Set("Content-MD5", md5s)
+
+				if err := req.Send(); err != nil {
+					return false
+				}
+				return true
 			},
 		},
 
@@ -104,7 +152,7 @@ func NewPlayBook() PlayBook {
 
 		"PutBucketPolicy": Action{
 			Description: "Write a new policy for the bucket.",
-			Cmd:         "put-bucket-acl --bucket <NAME> --policy <FILE>",
+			Cmd:         "put-bucket-policy --bucket <NAME> --policy <FILE>",
 			Callback: func(svc s3.S3, name string) bool {
 				testPolicy := map[string]interface{}{
 					"Version": "2021-01-01",
