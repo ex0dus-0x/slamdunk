@@ -102,7 +102,7 @@ func (r *Resolver) Resolve(url string) error {
 	}
 
 	// GET request to url and parse out data
-	log.Println("Sending GET to %s\n", fullUrl)
+	log.Printf("Sending GET to %s\n", fullUrl)
 	resp, err := client.Get(fullUrl)
 	if err != nil {
 		r.UrlsFailed += 1
@@ -163,7 +163,7 @@ func (r *Resolver) Resolve(url string) error {
 		if len(expr1Matches) != 0 {
 			status.Region = expr1Matches[1]
 			status.Bucket = expr1Matches[2]
-			log.Println("Matched: s3-%s.amazonaws.com/%s\n", status.Region, status.Bucket)
+			log.Printf("Matched: s3-%s.amazonaws.com/%s\n", status.Region, status.Bucket)
 		}
 
 		// <BUCKET_NAME>.s3.<REGION>.amazonaws.com/<OBJECTS>
@@ -172,7 +172,7 @@ func (r *Resolver) Resolve(url string) error {
 		if len(expr2Matches) != 0 {
 			status.Region = expr2Matches[2]
 			status.Bucket = expr2Matches[1]
-			log.Println("Matched: %s.s3.%s.amazonaws.com\n", status.Bucket, status.Region)
+			log.Printf("Matched: %s.s3.%s.amazonaws.com\n", status.Bucket, status.Region)
 		}
 
 		// shouldn't happen, but continue checks if bucket name couldn't be found
